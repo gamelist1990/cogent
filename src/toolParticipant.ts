@@ -106,33 +106,126 @@ export function registerToolUserChatParticipant(context: vscode.ExtensionContext
 
         // Summarize chat history to ensure previous turns are visible to the model even if
         // instanceof checks fail across module boundaries. We keep the summary short.
-        function summarizeHistory(ctx: vscode.ChatContext): string {
+        // This implementation performs a local compression and optionally calls the selected model
+        // to produce a short/high-quality summary when configured to do so.
+        async function summarizeHistory(ctx: vscode.ChatContext, model: vscode.LanguageModelChat, token: vscode.CancellationToken): Promise<string> {
             try {
                 if (!ctx?.history || !ctx.history.length) return '';
+                const maxTurns = 50;
+                const recentKeep = 20; // 直近は生で渡す（要調整可）
                 const parts: string[] = [];
-                for (const turn of ctx.history.slice(-10)) { // last up to 10 turns
+
+                const extractTextFromTurn = (turn: any): string => {
                     try {
-                        if ((turn as any).prompt) {
-                            parts.push(`User: ${(turn as any).prompt}`);
-                        } else if ((turn as any).response) {
-                            const text = (turn as any).response
+                        if (turn?.prompt && typeof turn.prompt === 'string') return `User: ${turn.prompt}`;
+                        if (turn?.response && Array.isArray(turn.response)) {
+                            const text = (turn.response as any[])
                                 .map((r: any) => {
-                                    if (r?.value?.value) return String(r.value.value);
-                                    if (r?.value?.fsPath) return r.value.fsPath;
-                                    if (r?.value?.uri && r.value.uri.fsPath) return r.value.uri.fsPath;
+                                    try {
+                                        if (r?.value?.value && typeof r.value.value === 'string') return String(r.value.value);
+                                        if (r?.value?.fsPath) return String(r.value.fsPath);
+                                        if (r?.value?.uri && r.value.uri.fsPath) return String(r.value.uri.fsPath);
+                                        if (typeof r === 'string') return r;
+                                    } catch {}
                                     return '';
                                 })
                                 .filter(Boolean)
                                 .join(' ');
-                            if (text) parts.push(`Assistant: ${text}`);
+                            if (text) return `Assistant: ${text}`;
                         }
-                    } catch { /* ignore malformed turn */ }
+                    } catch {}
+                    return '';
+                };
+
+                const history = ctx.history as any[];
+                // If short enough, just take up to maxTurns
+                if (history.length <= maxTurns) {
+                    for (const turn of history.slice(-maxTurns)) {
+                        const t = extractTextFromTurn(turn);
+                        if (t) parts.push(t);
+                    }
+                    return parts.join('\n');
                 }
-                return parts.join('\n');
-            } catch { return ''; }
+
+                // history is long -> compress older turns, keep recentKeep turns verbatim
+                const recent = history.slice(-recentKeep);
+                const older = history.slice(0, Math.max(0, history.length - recentKeep));
+
+                // Create a lightweight compression of older turns:
+                // take short excerpt from each (first 200 chars of extracted text), dedupe adjacent repeats,
+                // then join with " | " and cap total length to avoid huge prompts.
+                const compressedPieces: string[] = [];
+                for (const turn of older) {
+                    const txt = extractTextFromTurn(turn).replace(/\s+/g, ' ').trim();
+                    if (!txt) continue;
+                    const excerpt = txt.length > 200 ? txt.slice(0, 200) + '…' : txt;
+                    // avoid adding the same excerpt repeatedly
+                    if (compressedPieces.length === 0 || compressedPieces[compressedPieces.length - 1] !== excerpt) {
+                        compressedPieces.push(excerpt);
+                    }
+                    if (compressedPieces.length >= 100) break; // safety cap on pieces
+                }
+
+                let compressedSummary = compressedPieces.join(' | ');
+                if (compressedSummary.length > 800) compressedSummary = compressedSummary.slice(0, 800) + '…';
+
+                // Optionally use the model to further condense the compressedSummary into a short high-quality summary
+                const useModelSummary = vscode.workspace.getConfiguration('cogent').get('use_model_history_summary', true);
+                if (useModelSummary && model) {
+                    try {
+                        // Build a small prompt instructing the model to summarize
+                        const sys = [{ role: 'system', content: 'あなたは会話履歴の要約者です。古い履歴の要点だけを3行以内で簡潔にまとめてください。個人情報を削除し、事実のみを残してください。' } as any];
+                        const user = [{ role: 'user', content: `要約対象:
+${compressedSummary}
+
+短く日本語で3行以内の要約を出してください。` } as any];
+                        const msg = [...sys, ...user];
+
+                        // Fire a lightweight request to the model
+                        const resp = await (model as any).sendRequest(msg, { justification: 'history-summary' } as any, token);
+                        let summaryText = '';
+                        for await (const part of resp.stream) {
+                            // try to read text parts in a defensive way
+                            if (part instanceof vscode.LanguageModelTextPart) {
+                                summaryText += part.value;
+                            } else if ((part as any).value && typeof (part as any).value === 'string') {
+                                summaryText += (part as any).value;
+                            }
+                        }
+
+                        summaryText = summaryText.trim();
+                        if (summaryText) {
+                            // crop to safe length
+                            if (summaryText.length > 800) summaryText = summaryText.slice(0, 800) + '…';
+                            return `[SUMMARY of earlier ${older.length} turns]: ${summaryText}`;
+                        }
+                    } catch (err) {
+                        // ignore model errors and fall back to local compressed summary
+                        try { console.debug('history summary model call failed: ' + String(err)); } catch {}
+                    }
+                }
+
+                // Fallback: return local compressed summary
+                parts.push(`[SUMMARY of earlier ${older.length} turns]: ${compressedSummary}`);
+
+                // Append recent turns uncompressed (up to recentKeep)
+                for (const turn of recent) {
+                    const t = extractTextFromTurn(turn);
+                    if (t) parts.push(t);
+                }
+
+                // If still too long, take last maxTurns of the assembled parts
+                const assembled = parts.join('\n').split('\n');
+                if (assembled.length > maxTurns) {
+                    return assembled.slice(-maxTurns).join('\n');
+                }
+                return assembled.join('\n');
+            } catch {
+                return '';
+            }
         }
 
-        const historySummary = summarizeHistory(chatContext);
+        const historySummary = await summarizeHistory(chatContext, model, token);
         const procPrompt = historySummary ? `${historySummary}\n\n${request.prompt}` : request.prompt;
 
         const result = await renderPrompt(
