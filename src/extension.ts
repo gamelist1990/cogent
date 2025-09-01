@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { registerToolUserChatParticipant } from './toolParticipant';
 import { RemoveFileTool } from './tools';
 import { DiffView } from './components/DiffView';
 import { Logger } from './components/Logger';
@@ -11,7 +12,12 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
         vscode.lm.registerTool('cogent_removeFile', new RemoveFileTool())
     );
-    
+
+
+
+    // Register the tool participant
+    registerToolUserChatParticipant(context);
+
     // Note: semantic search and other tools are expected to be provided by Copilot built-in tools.
 }
 

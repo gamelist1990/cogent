@@ -201,23 +201,43 @@ class ToolResultElement extends PromptElement<ToolResultElementProps, void> {
             countTokens: async (content: string) => sizing.countTokens(content),
         };
 
-        const toolResult = this.props.toolCallResult ??
-            await vscode.lm.invokeTool(
-                this.props.toolCall.name, 
-                { 
-                    input: this.props.toolCall.input, 
-                    toolInvocationToken: this.props.toolInvocationToken, 
-                    tokenizationOptions 
-                }, 
-                dummyCancellationToken
-            );
+        let toolResult: vscode.LanguageModelToolResult | undefined = this.props.toolCallResult;
+        try {
+            if (!toolResult) {
+                toolResult = await vscode.lm.invokeTool(
+                    this.props.toolCall.name,
+                    {
+                        input: this.props.toolCall.input,
+                        toolInvocationToken: this.props.toolInvocationToken,
+                        tokenizationOptions
+                    },
+                    dummyCancellationToken
+                );
+            }
 
-        return (
-            <ToolMessage toolCallId={this.props.toolCall.callId}>
-                <meta value={new ToolResultMetadata(this.props.toolCall.callId, toolResult)}></meta>
-                <ToolResult data={toolResult} />
-            </ToolMessage>
-        );
+            // Defensive: if toolResult is falsy or doesn't contain expected data, provide a safe message
+            if (!toolResult) {
+                return <ToolMessage toolCallId={this.props.toolCall.callId}>Tool returned no result</ToolMessage>;
+            }
+
+            // Some tool results may have missing patch text/stream for certain tool types. Wrap rendering in try/catch
+            try {
+                return (
+                    <ToolMessage toolCallId={this.props.toolCall.callId}>
+                        <meta value={new ToolResultMetadata(this.props.toolCall.callId, toolResult)}></meta>
+                        <ToolResult data={toolResult} />
+                    </ToolMessage>
+                );
+            } catch (err) {
+                const msg = (err instanceof Error) ? err.message : String(err);
+                Logger.getInstance().error(`Failed to render tool result for ${this.props.toolCall.name}: ${msg}`);
+                return <ToolMessage toolCallId={this.props.toolCall.callId}>Unable to render tool result: {msg}</ToolMessage>;
+            }
+        } catch (invokeErr) {
+            const msg = (invokeErr instanceof Error) ? invokeErr.message : String(invokeErr);
+            Logger.getInstance().error(`Tool invocation failed for ${this.props.toolCall.name}: ${msg}`);
+            return <ToolMessage toolCallId={this.props.toolCall.callId}>Tool invocation failed: {msg}</ToolMessage>;
+        }
     }
 }
 
