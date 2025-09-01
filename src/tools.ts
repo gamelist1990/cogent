@@ -10,5 +10,7 @@ import { FetchWebpageTool } from './tools/FetchWebpageTool';
 import { GetVscodeApiTool } from './tools/GetVscodeApiTool';
 import { ThinkTool } from './tools/ThinkTool';
 import { SemanticSearchTool } from './tools/SemanticSearchTool';
+import { GetErrorTool } from './tools/GetErrorTool';
 export { FileReadTool, FileWriteTool, FileUpdateTool, CommandRunTool, ApplyDiffTool, RemoveFileTool, GetChangedFilesTool, WebSearchTool, FetchWebpageTool, GetVscodeApiTool, ThinkTool };
 export { SemanticSearchTool };
+export { GetErrorTool };

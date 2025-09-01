@@ -89,6 +89,7 @@ export class ToolUserPrompt extends PromptElement<ToolUserProps, void> {
 
     async render(_state: void, _sizing: PromptSizing) {
         const logger = Logger.getInstance();
+        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
         const { structure, contents } = this.getProjectStructure();
         logger.debug(`Project file structure:\n ${structure}`);
         const useFullWorkspace = vscode.workspace.getConfiguration('cogent').get('use_full_workspace', true);
@@ -121,7 +122,7 @@ export class ToolUserPrompt extends PromptElement<ToolUserProps, void> {
                 <History context={this.props.context} priority={10} />
                 <PromptReferences
                     references={this.props.request.references}
-                    priority={20}
+                    workspaceFolder={workspaceFolder}
                 />
                 <UserMessage>
                     {this.props.processedPrompt || this.props.request.prompt}
@@ -286,6 +287,7 @@ function chatResponseToString(response: vscode.ChatResponseTurn): string {
 interface PromptReferencesProps extends BasePromptElementProps {
     references: ReadonlyArray<vscode.ChatPromptReference>;
     excludeReferences?: boolean;
+    workspaceFolder?: vscode.WorkspaceFolder;
 }
 
 class PromptReferences extends PromptElement<PromptReferencesProps, void> {
@@ -295,7 +297,8 @@ class PromptReferences extends PromptElement<PromptReferencesProps, void> {
                 {this.props.references.map(ref => (
                     <PromptReferenceElement 
                         ref={ref} 
-                        excludeReferences={this.props.excludeReferences} 
+                        excludeReferences={this.props.excludeReferences}
+                        workspaceFolder={this.props.workspaceFolder}
                     />
                 ))}
             </UserMessage>
@@ -306,25 +309,30 @@ class PromptReferences extends PromptElement<PromptReferencesProps, void> {
 interface PromptReferenceProps extends BasePromptElementProps {
     ref: vscode.ChatPromptReference;
     excludeReferences?: boolean;
+    workspaceFolder?: vscode.WorkspaceFolder;
 }
 
 class PromptReferenceElement extends PromptElement<PromptReferenceProps> {
     async render(_state: void, _sizing: PromptSizing): Promise<PromptPiece | undefined> {
         const value = this.props.ref.value;
         if (value instanceof vscode.Uri) {
+            let uri = value;
+            if (!uri.scheme && this.props.workspaceFolder) {
+                uri = vscode.Uri.file(path.join(this.props.workspaceFolder.uri.fsPath, uri.fsPath));
+            }
             try {
-                const stat = await vscode.workspace.fs.stat(value);
+                const stat = await vscode.workspace.fs.stat(uri);
                 // If the URI is a directory, avoid readFile which throws EISDIR.
                 if (stat.type === vscode.FileType.Directory) {
-                    const entries = await vscode.workspace.fs.readDirectory(value);
+                    const entries = await vscode.workspace.fs.readDirectory(uri);
                     const names = entries
                         .map(([name, type]) => `${name}${type === vscode.FileType.Directory ? '/' : ''}`)
                         .join(', ');
                     return (
                         <Tag name="context">
                             {!this.props.excludeReferences && 
-                                <references value={[new PromptReference(value)]} />}
-                            {value.fsPath}:<br />
+                                <references value={[new PromptReference(uri)]} />}
+                            {uri.fsPath}:<br />
                             ``` <br />
                             Directory contents: {names}<br />
                             ```<br />
@@ -332,12 +340,12 @@ class PromptReferenceElement extends PromptElement<PromptReferenceProps> {
                     );
                 }
 
-                const fileContents = (await vscode.workspace.fs.readFile(value)).toString();
+                const fileContents = (await vscode.workspace.fs.readFile(uri)).toString();
                 return (
                     <Tag name="context">
                         {!this.props.excludeReferences && 
-                            <references value={[new PromptReference(value)]} />}
-                        {value.fsPath}:<br />
+                            <references value={[new PromptReference(uri)]} />}
+                        {uri.fsPath}:<br />
                         ``` <br />
                         {fileContents}<br />
                         ```<br />
@@ -349,8 +357,8 @@ class PromptReferenceElement extends PromptElement<PromptReferenceProps> {
                 return (
                     <Tag name="context">
                         {!this.props.excludeReferences && 
-                            <references value={[new PromptReference(value)]} />}
-                        {value.fsPath}:<br />
+                            <references value={[new PromptReference(uri)]} />}
+                        {uri.fsPath}:<br />
                         ``` <br />
                         Unable to read resource: {msg}<br />
                         ```<br />
@@ -358,13 +366,17 @@ class PromptReferenceElement extends PromptElement<PromptReferenceProps> {
                 );
             }
         } else if (value instanceof vscode.Location) {
-            const rangeText = (await vscode.workspace.openTextDocument(value.uri))
+            let uri = value.uri;
+            if (!uri.scheme && this.props.workspaceFolder) {
+                uri = vscode.Uri.file(path.join(this.props.workspaceFolder.uri.fsPath, uri.fsPath));
+            }
+            const rangeText = (await vscode.workspace.openTextDocument(uri))
                 .getText(value.range);
             return (
                 <Tag name="context">
                     {!this.props.excludeReferences && 
                         <references value={[new PromptReference(value)]} />}
-                    {value.uri.fsPath}:{value.range.start.line + 1}-
+                    {uri.fsPath}:{value.range.start.line + 1}-
                     {value.range.end.line + 1}: <br />
                     ```<br />
                     {rangeText}<br />

@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { registerToolUserChatParticipant } from './toolParticipant';
-import { FileReadTool, FileWriteTool, FileUpdateTool, CommandRunTool, ApplyDiffTool, RemoveFileTool, GetChangedFilesTool, WebSearchTool, FetchWebpageTool, GetVscodeApiTool, ThinkTool, SemanticSearchTool } from './tools';
+import { FileReadTool, FileWriteTool, FileUpdateTool, CommandRunTool, ApplyDiffTool, RemoveFileTool, GetChangedFilesTool, WebSearchTool, FetchWebpageTool, GetVscodeApiTool, ThinkTool, SemanticSearchTool, GetErrorTool } from './tools';
 import { DiffView } from './components/DiffView';
 import { Logger } from './components/Logger';
 
@@ -21,7 +21,8 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.lm.registerTool('cogent_fetchWebpage', new FetchWebpageTool()),
         vscode.lm.registerTool('cogent_getVscodeApi', new GetVscodeApiTool()),
         vscode.lm.registerTool('cogent_think', new ThinkTool()),
-        vscode.lm.registerTool('cogent_semanticSearch', new SemanticSearchTool())
+        vscode.lm.registerTool('cogent_semanticSearch', new SemanticSearchTool()),
+        vscode.lm.registerTool('cogent_getError', new GetErrorTool())
     );
 
 
