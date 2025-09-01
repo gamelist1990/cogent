@@ -8,5 +8,6 @@ import { GetChangedFilesTool } from './tools/GetChangedFilesTool';
 import { WebSearchTool } from './tools/WebSearchTool';
 import { FetchWebpageTool } from './tools/FetchWebpageTool';
 import { GetVscodeApiTool } from './tools/GetVscodeApiTool';
+import { ThinkTool } from './tools/ThinkTool';
 
-export { FileReadTool, FileWriteTool, FileUpdateTool, CommandRunTool, ApplyDiffTool, RemoveFileTool, GetChangedFilesTool, WebSearchTool, FetchWebpageTool, GetVscodeApiTool };
+export { FileReadTool, FileWriteTool, FileUpdateTool, CommandRunTool, ApplyDiffTool, RemoveFileTool, GetChangedFilesTool, WebSearchTool, FetchWebpageTool, GetVscodeApiTool, ThinkTool };
