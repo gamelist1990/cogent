@@ -111,10 +111,30 @@ Please provide a detailed, expanded version of this prompt that clearly expresse
         }
 
         const useFullWorkspace = vscode.workspace.getConfiguration('cogent').get('use_full_workspace', false);
-        const tools = vscode.lm.tools.filter(tool =>
+        // New config to control whether we should always prefer using tools
+        const alwaysUseTools = vscode.workspace.getConfiguration('cogent').get('alwaysUseTools', true);
+
+        // Base set: cogent_ tools (optionally excluding readFile when useFullWorkspace=false)
+        let tools = vscode.lm.tools.filter(tool =>
+            typeof tool.name === 'string' &&
             tool.name.startsWith('cogent_') &&
             (!useFullWorkspace || tool.name !== 'cogent_readFile')
         );
+
+        // Ensure the getVscodeApi tool and any Copilot-provided tools are available by default.
+        // We prefer tools named 'cogent_getVscodeApi' and any tool whose name contains 'copilot' or 'getvscodeapi'.
+        const extraPreferred = vscode.lm.tools.filter(t => {
+            if (!t || typeof t.name !== 'string') return false;
+            const n = t.name.toLowerCase();
+            return n === 'cogent_getvscodeapi' || n.includes('copilot') || n.includes('getvscodeapi');
+        });
+
+        // Merge and dedupe by name
+        const byName = new Map<string, typeof extraPreferred[0]>();
+        for (const t of [...tools, ...extraPreferred]) {
+            if (typeof t.name === 'string' && !byName.has(t.name)) byName.set(t.name, t);
+        }
+        tools = Array.from(byName.values());
 
         const options: vscode.LanguageModelChatRequestOptions = {
             justification: 'To make a request to Cogent',
@@ -150,6 +170,10 @@ Please provide a detailed, expanded version of this prompt that clearly expresse
             if (requestedTool) {
                 options.toolMode = vscode.LanguageModelChatToolMode.Required;
                 options.tools = vscode.lm.tools.filter(tool => tool.name === requestedTool.name);
+            } else if (alwaysUseTools) {
+                // If configured to always use tools, make them Required so the model must invoke them
+                options.toolMode = vscode.LanguageModelChatToolMode.Required;
+                options.tools = [...tools];
             } else {
                 options.toolMode = undefined;
                 options.tools = [...tools];

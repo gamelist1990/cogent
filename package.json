@@ -30,6 +30,12 @@
                     "description": "Include full workspace content in the initial prompt. If disabled, files will be read on demand.\n\n Note: Not recommended for large workspaces.",
                     "order": 1
                 },
+                "cogent.alwaysUseTools": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "When true, Cogent will prefer to invoke Language Model tools for operations by default (makes tools Required).",
+                    "order": 1.5
+                },
                 "cogent.autoConfirmTools": {
                     "type": "object",
                     "properties": {
@@ -76,6 +82,12 @@
                     "default": false,
                     "description": "Enable debug logging in the output channel",
                     "order": 3
+                },
+                "cogent.inputTextFix": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Use the language model to expand concise user input into a more detailed prompt before sending.",
+                    "order": 3.5
                 },
                 "cogent.commandTimeout": {
                     "type": "number",
