@@ -26,7 +26,21 @@ export class FileUpdateTool implements vscode.LanguageModelTool<IFileOperationPa
                 throw new Error('File path is required');
             }
             const filePath = path.join(workspacePath, options.input.path);
-            
+
+            // Prevent operating on directories
+            try {
+                const stat = await fs.stat(filePath);
+                if (stat.isDirectory()) {
+                    return new vscode.LanguageModelToolResult([
+                        new vscode.LanguageModelTextPart(`Path ${options.input.path} is a directory. Please provide a file path.`)
+                    ]);
+                }
+            } catch (err) {
+                return new vscode.LanguageModelToolResult([
+                    new vscode.LanguageModelTextPart(`Error accessing path ${options.input.path}: ${(err as Error)?.message}`)
+                ]);
+            }
+
             // Check for unsaved changes first
             const unsavedChanges = await UnsavedChangesDetector.detectChanges(options.input.path);
             const currentContent = unsavedChanges.editorContent || await fs.readFile(filePath, 'utf-8');

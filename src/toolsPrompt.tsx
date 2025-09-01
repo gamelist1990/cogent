@@ -124,6 +124,8 @@ export class ToolUserPrompt extends PromptElement<ToolUserProps, void> {
 ${structure}
 ${useFullWorkspace ? `\n📄 File Contents:\n${fileContentsSection}` : ''}
 
+${this.props.request.prompt && this.props.request.prompt.includes('#codebase') ? `\n## Codebase Snapshot (requested via #codebase)\n<codebase>\n${structure}\n${useFullWorkspace ? `\n📄 File Contents:\n${fileContentsSection}` : ''}\n</codebase>\n` : ''}
+
 ## User's OS Level
 - ${osLevel} (using ${shellType})
 

@@ -295,6 +295,20 @@ export class ApplyDiffTool implements vscode.LanguageModelTool<ApplyDiffInput> {
 
             const fullPath = path.join(workspaceFolder.uri.fsPath, options.input.path);
             
+            // Prevent operating on directories
+            try {
+                const stat = await fs.stat(fullPath);
+                if (stat.isDirectory()) {
+                    return new vscode.LanguageModelToolResult([
+                        new vscode.LanguageModelTextPart(`Path ${options.input.path} is a directory. Apply-diff supports files only.`)
+                    ]);
+                }
+            } catch (err) {
+                return new vscode.LanguageModelToolResult([
+                    new vscode.LanguageModelTextPart(`Error accessing path ${options.input.path}: ${(err as Error)?.message}`)
+                ]);
+            }
+
             // First check for any unsaved changes
             const unsavedChanges = await UnsavedChangesDetector.detectChanges(options.input.path);
             // Use editor content if there are unsaved changes, otherwise use disk content

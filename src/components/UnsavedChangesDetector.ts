@@ -40,7 +40,16 @@ export class UnsavedChangesDetector {
                 };
             }
 
-            // Get content from disk
+            // Get content from disk - ensure target is a file
+            try {
+                const stat = await fs.stat(fileUri.fsPath);
+                if (stat.isDirectory()) {
+                    return { hasChanges: false, error: 'Path is a directory' };
+                }
+            } catch (err) {
+                return { hasChanges: false, error: `Error accessing disk: ${(err as Error)?.message}` };
+            }
+
             const diskContent = await fs.readFile(fileUri.fsPath, 'utf-8');
             const editorContent = document.getText();
 

@@ -35,11 +35,23 @@ export class FileReadTool implements vscode.LanguageModelTool<IFileOperationPara
             const results = await Promise.all(filePaths.map(async (filePath) => {
                 const fullPath = path.join(workspacePath, filePath);
                 try {
+                    // If the target is a directory, return a safe directory listing instead of trying to read it
+                    const stat = await fs.stat(fullPath);
+                    if (stat.isDirectory()) {
+                        const entries = await fs.readdir(fullPath);
+                        return [
+                            '='.repeat(80),
+                            `📁 Directory: ${filePath}`,
+                            '='.repeat(80),
+                            `Directory contents: ${entries.join(', ')}`
+                        ].join('\n');
+                    }
+
                     const content = await fs.readFile(fullPath, 'utf-8');
                     return [
-                        '=' .repeat(80),
+                        '='.repeat(80),
                         `📝 File: ${filePath}`,
-                        '=' .repeat(80),
+                        '='.repeat(80),
                         this.addLineNumbers(content)
                     ].join('\n');
                 } catch (err) {
