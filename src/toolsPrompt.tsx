@@ -220,7 +220,12 @@ ${customInstructionsSection}
                     references={this.props.request.references}
                     priority={20}
                 />
-                <UserMessage>{this.props.request.prompt}</UserMessage>
+                <UserMessage>
+                    {this.props.request.prompt}
+                    <br />
+                    {/* Command link: opens the registered VS Code command to format and copy text */}
+                    {[`[整える](command:cogent.formatUserInput)`]}
+                </UserMessage>
                 <ToolCalls
                     toolCallRounds={this.props.toolCallRounds}
                     toolInvocationToken={this.props.request.toolInvocationToken}

@@ -54,23 +54,28 @@ export class FileUpdateTool implements vscode.LanguageModelTool<IFileOperationPa
                     )
                 ]);
             }
-            this.diffView = new DiffView(filePath, currentContent);
-            await this.diffView.show();
-            
-            if (options.input.content) {
-                const lines = options.input.content.split('\n');
-                for (let i = 0; i < lines.length; i++) {
-                    await this.diffView.update(
-                        lines.slice(0, i + 1).join('\n'),
-                        i
-                    );
-                    await new Promise(resolve => setTimeout(resolve, 50));
-                }
-            }
 
-            return new vscode.LanguageModelToolResult([
-                new vscode.LanguageModelTextPart(`Changes shown in diff view for ${options.input.path}. Review and save to apply changes.`)
-            ]);
+            // For small files, perform an editor-free write using the GetVscodeApiTool 'editFiles' action
+            try {
+                const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+                if (!workspaceFolder) {
+                    throw new Error('No workspace folder found');
+                }
+                // Use the language model tools invocation to call our own API tool
+                const relPath = options.input.path;
+                const edits = [{ path: relPath!, content: options.input.content ?? currentContent }];
+                // toolInvocationToken is optional; pass undefined
+                const token = new vscode.CancellationTokenSource().token;
+                await vscode.lm.invokeTool('cogent_getVscodeApi', { input: { action: 'editFiles', edits }, toolInvocationToken: undefined }, token);
+
+                return new vscode.LanguageModelToolResult([
+                    new vscode.LanguageModelTextPart(`Wrote changes to ${options.input.path} using editFiles API.`)
+                ]);
+            } catch (err) {
+                return new vscode.LanguageModelToolResult([
+                    new vscode.LanguageModelTextPart(`Error updating file via editFiles: ${(err as Error)?.message}`)
+                ]);
+            }
         } catch (err: unknown) {
             if (this.diffView) {
                 await this.diffView.close();
