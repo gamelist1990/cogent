@@ -22,6 +22,16 @@ export function isTsxToolUserMetadata(obj: unknown): obj is TsxToolUserMetadata 
 }
 
 export function registerToolUserChatParticipant(context: vscode.ExtensionContext) {
+    // We'll create the chat participant below but declare it here so the handler
+    // can update the participant's name at runtime based on the selected model.
+    let toolUser: vscode.ChatParticipant | undefined;
+
+    function getModelDisplayName(model: vscode.LanguageModelChat | undefined): string {
+        if (!model) return 'unknown-model';
+        const anyM: any = model as any;
+        return (anyM.displayName || anyM.name || anyM.id || `${anyM.vendor ?? ''}/${anyM.family ?? ''}`).toString();
+    }
+
     const handler: vscode.ChatRequestHandler = async (request: vscode.ChatRequest, chatContext: vscode.ChatContext, stream: vscode.ChatResponseStream, token: vscode.CancellationToken) => {
         // Prefer a model the user has already selected on the chat/request/context if present.
         // There isn't a single guaranteed property name across vscode API versions, so try a few
@@ -43,6 +53,18 @@ export function registerToolUserChatParticipant(context: vscode.ExtensionContext
                 models = await vscode.lm.selectChatModels({ vendor: 'copilot', family: 'gpt-4o' });
                 model = models[0];
             }
+        }
+
+        // Update the chat participant's displayed name to include the chosen model
+        try {
+            const modelLabel = getModelDisplayName(model);
+            if (toolUser) {
+                // Assign to .name property which corresponds to chatParticipants.name
+                // Some API surfaces may accept displayName; we set name to match package.json
+                (toolUser as any).name = `cogent (${modelLabel})`;
+            }
+        } catch (e) {
+            // non-fatal; continue without changing name
         }
 
         if (!model) {
@@ -158,7 +180,7 @@ export function registerToolUserChatParticipant(context: vscode.ExtensionContext
         };
     };
 
-    const toolUser = vscode.chat.createChatParticipant('cogent.assistant', handler);
+    toolUser = vscode.chat.createChatParticipant('cogent.assistant', handler);
     toolUser.iconPath = vscode.Uri.joinPath(context.extensionUri, 'assets/cogent.jpeg');
 
     // Register the apply changes command

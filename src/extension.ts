@@ -27,7 +27,20 @@ export function activate(context: vscode.ExtensionContext) {
     // Command wrapper so the UI can trigger formatting via a command link
     const disposableFormat = vscode.commands.registerCommand('cogent.formatUserInput', async (initialText?: string) => {
         try {
-            const text = initialText ?? '';
+            // If the command was invoked without an argument (e.g. via a command link), show an input box
+            let text: string | undefined = initialText;
+            if (!text) {
+                const input = await vscode.window.showInputBox({
+                    prompt: 'Enter the user prompt to format (will be copied to clipboard after formatting)',
+                    placeHolder: 'Type the prompt you would send to Cogent (e.g. "リンゴを作る処理を実装してください...")'
+                });
+                if (input === undefined) {
+                    // user cancelled
+                    return;
+                }
+                text = input;
+            }
+
             const token = new vscode.CancellationTokenSource().token;
             const result = await vscode.lm.invokeTool('cogent_formatUserInput', { input: { text, style: 'polish' }, toolInvocationToken: undefined }, token);
             const anyRes: any = result;
