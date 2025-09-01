@@ -81,15 +81,9 @@
                 },
                 "cogent.commandTimeout": {
                     "type": "number",
-                    "default": 45,
+                    "default": 60,
                     "description": "Timeout in seconds for terminal commands",
                     "order": 4
-                },
-                "cogent.inputTextFix": {
-                    "type": "boolean",
-                    "default": false,
-                    "description": "Automatically expand concise user input to more detailed prompts before processing",
-                    "order": 5
                 }
             }
         },
