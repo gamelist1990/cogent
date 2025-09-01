@@ -32,6 +32,32 @@ export function registerToolUserChatParticipant(context: vscode.ExtensionContext
         return (anyM.displayName || anyM.name || anyM.id || `${anyM.vendor ?? ''}/${anyM.family ?? ''}`).toString();
     }
 
+    function heuristicsRewrite(text: string): string {
+        if (!text) return '';
+        let r = text;
+        // Collapse whitespace and normalize newlines
+        r = r.replace(/\r\n?/g, '\n').replace(/\n{3,}/g, '\n\n');
+        r = r.replace(/[ \t]+/g, ' ');
+        // Remove repeated punctuation
+        r = r.replace(/([!?.,;:]){2,}/g, '$1');
+        // Expand simple shorthand common in prompts
+        r = r.replace(/\bpls\b/gi, 'please');
+        r = r.replace(/\bthx\b/gi, 'thanks');
+        // Ensure sentence-like capitalization for English-ish text
+        r = r.split('\n').map(line => {
+            const t = line.trim();
+            if (!t) return '';
+            return t.charAt(0).toUpperCase() + t.slice(1);
+        }).join('\n');
+        // Style-specific tweaks
+        r = r.replace(/\s+([,.!?;:])/g, '$1')
+            .replace(/([,.!?;:])([^\s])/g, '$1 $2')
+            .replace(/\s+。/g, '。')
+            .replace(/。([^\s])/g, '。 $1')
+            .replace(/\u3000/g, ' ');
+        return r.trim();
+    }
+
     const handler: vscode.ChatRequestHandler = async (request: vscode.ChatRequest, chatContext: vscode.ChatContext, stream: vscode.ChatResponseStream, token: vscode.CancellationToken) => {
         // Prefer a model the user has already selected on the chat/request/context if present.
         // There isn't a single guaranteed property name across vscode API versions, so try a few
@@ -52,6 +78,43 @@ export function registerToolUserChatParticipant(context: vscode.ExtensionContext
             if (!model) {
                 models = await vscode.lm.selectChatModels({ vendor: 'copilot', family: 'gpt-4o' });
                 model = models[0];
+            }
+        }
+
+        // Check if inputTextFix is enabled
+        const inputTextFix = vscode.workspace.getConfiguration('cogent').get('inputTextFix', false);
+        let processedPrompt = request.prompt;
+        if (inputTextFix && model) {
+            try {
+                // Use AI to expand concise user input to more detailed prompt
+                const expandMessages: vscode.LanguageModelChatMessage[] = [
+                    vscode.LanguageModelChatMessage.User(`You are a helpful assistant that understands user intent from concise inputs and expands them into detailed, clear prompts for an AI coding assistant.
+
+Given the user's concise input, analyze their likely intent and create a more detailed, specific prompt that captures what they probably want to achieve.
+
+Examples:
+- "リンゴを食べたい" → "I want to know how to eat an apple properly, including preparation steps and any tips for enjoying it."
+- "コードを書く" → "I need help writing code for a specific task. Please provide guidance on best practices and implementation steps."
+- "バグを直す" → "I have a bug in my code that needs to be fixed. Please help me identify and resolve the issue."
+
+User input: "${request.prompt}"
+
+Please provide a detailed, expanded version of this prompt that clearly expresses the user's likely intent:`)
+                ];
+
+                const expandResponse = await model.sendRequest(expandMessages, { justification: 'Expanding user input for better understanding' }, token);
+                let expandedText = '';
+                for await (const part of expandResponse.stream) {
+                    if (part instanceof vscode.LanguageModelTextPart) {
+                        expandedText += part.value;
+                    }
+                }
+                if (expandedText.trim()) {
+                    processedPrompt = expandedText.trim();
+                }
+            } catch (error) {
+                // If expansion fails, fall back to original prompt
+                console.warn('Failed to expand user input:', error);
             }
         }
 
@@ -89,7 +152,8 @@ export function registerToolUserChatParticipant(context: vscode.ExtensionContext
                 context: chatContext,
                 request,
                 toolCallRounds: [],
-                toolCallResults: {}
+                toolCallResults: {},
+                processedPrompt
             },
             { modelMaxPromptTokens: model.maxInputTokens },
             model
@@ -145,7 +209,8 @@ export function registerToolUserChatParticipant(context: vscode.ExtensionContext
                         context: chatContext,
                         request,
                         toolCallRounds,
-                        toolCallResults: accumulatedToolResults
+                        toolCallResults: accumulatedToolResults,
+                        processedPrompt
                     },
                     { modelMaxPromptTokens: model.maxInputTokens },
                     model

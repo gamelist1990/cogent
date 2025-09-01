@@ -32,6 +32,7 @@ export interface ToolUserProps extends BasePromptElementProps {
     context: vscode.ChatContext;
     toolCallRounds: ToolCallRound[];
     toolCallResults: Record<string, vscode.LanguageModelToolResult>;
+    processedPrompt?: string;
 }
 
 export class ToolUserPrompt extends PromptElement<ToolUserProps, void> {
@@ -111,7 +112,7 @@ export class ToolUserPrompt extends PromptElement<ToolUserProps, void> {
             osLevel,
             shellType,
             useFullWorkspace,
-            requestPrompt: this.props.request.prompt
+            requestPrompt: this.props.processedPrompt || this.props.request.prompt
         });
 
         return (
@@ -123,7 +124,7 @@ export class ToolUserPrompt extends PromptElement<ToolUserProps, void> {
                     priority={20}
                 />
                 <UserMessage>
-                    {this.props.request.prompt}
+                    {this.props.processedPrompt || this.props.request.prompt}
                     <br />
                     {/* Command link: opens the registered VS Code command to format and copy text */}
                     {[`[整える](command:cogent.formatUserInput)`]}

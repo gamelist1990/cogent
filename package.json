@@ -81,6 +81,12 @@
                     "default": 45,
                     "description": "Timeout in seconds for terminal commands",
                     "order": 4
+                },
+                "cogent.inputTextFix": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Automatically expand concise user input to more detailed prompts before processing",
+                    "order": 5
                 }
             }
         },
@@ -253,21 +259,6 @@
                         "commands": { "type": "array", "items": { "type": "string" } }
                     },
                     "required": ["action"]
-                }
-            }
-            ,
-            {
-                "name": "cogent_formatUserInput",
-                "tags": ["text", "format"],
-                "displayName": "Format User Input",
-                "modelDescription": "Format and polish user-provided text for chat use (concise, polish, or none).",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "text": { "type": "string" },
-                        "style": { "type": "string", "enum": ["concise", "polish", "none"] }
-                    },
-                    "required": ["text"]
                 }
             }
         ]

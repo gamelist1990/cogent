@@ -53,7 +53,6 @@ export function buildPrompt(opts: BuildPromptOptions): string {
 		'9) cogent_getVscodeApi (GetVscodeApiTool)\n  - 入力: { action: string, ... } 可能な action 値:\n    - get_terminal_last_command: 直近の送信コマンドを返す\n    - get_terminal_selection: エディタ選択を返す\n    - runCommands: { commands: string[] } をターミナルへ送る\n    - editFiles: { edits: [{ path, content, create? }] } を workspace.fs 経由で書く\n    - list_code_usages: { symbol: { uri?, position?, name? } } で参照/定義検索を行う\n',
 		'10) cogent_removeFile (RemoveFileTool)\n  - 入力: { path: string, recursive?: boolean }\n  - 振る舞い: workspace.fs.delete を呼び、ファイル/ディレクトリを削除する。復元はできないため慎重に。\n',
 		'11) cogent_think (ThinkTool)\n  - 入力: { action: string }\n  - サポートする action: gather_context, get_open_editors, get_workspace_folders\n  - 振る舞い: 環境情報や開いているファイル、未保存変更の一覧などを JSON で返す。バックグラウンド解析に使う。\n',
-		"12) cogent_formatUserInput (FormatUserInputTool)\n  - 入力: { text: string, style?: 'concise' | 'polish' | 'none' }\n  - 振る舞い: ユーザー入力の簡易整形・不要語削除・句読点整形を行って返す。\n",
 		'',
 		"13) get_search_view_results (#get_search_view_results)\n  - 入力: なし\n  - 振る舞い: VS Code の検索ビューに現在表示されている検索結果を取得して返す。大規模な検索結果のスキャンや最近の検索の確認に使う。\n",
 		"14) workspace_search (#search)\n  - 入力: { query: string, includePattern?: string, isRegexp?: boolean, maxResults?: number }\n  - 振る舞い: ワークスペース内を高速にテキスト検索して、該当ファイルと該当行の抜粋を返す。正規表現検索やファイルパターンで絞り込み可能。大きな検索は頻繁に実行しないこと。\n",
