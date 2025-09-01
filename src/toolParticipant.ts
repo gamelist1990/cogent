@@ -1,6 +1,6 @@
 import { renderPrompt } from '@vscode/prompt-tsx';
 import * as vscode from 'vscode';
-import { ToolCallRound, ToolResultMetadata, ToolUserPrompt } from './toolsPrompt';
+import { ToolCallRound, ToolResultMetadata, ToolUserPrompt } from './prompt';
 
 export interface TsxToolUserMetadata {
     toolCallsMetadata: ToolCallsMetadata;

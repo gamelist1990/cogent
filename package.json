@@ -2,7 +2,7 @@
     "name": "cogent",
     "displayName": "Cogent",
     "description": "Cogent is a Copilot extension that gives it agenting capabilities like executing commands, editing and reading files, and more.",
-    "version": "1.0.2",
+    "version": "2.0.0",
     "engines": {
         "vscode": "^1.95.0"
     },
@@ -17,9 +17,16 @@
 		"type": "git",
 		"url": "https://github.com/kturung/cogent"
 	},
-    "activationEvents": [],
+    
     "main": "./out/extension.js",
     "contributes": {
+        "commands": [
+            {
+                "command": "cogent.formatUserInput",
+                "title": "Cogent: Format User Input",
+                "category": "Cogent"
+            }
+        ],
         "configuration": {
             "title": "Cogent",
             "properties": {
@@ -253,6 +260,21 @@
                         "commands": { "type": "array", "items": { "type": "string" } }
                     },
                     "required": ["action"]
+                }
+            }
+            ,
+            {
+                "name": "cogent_formatUserInput",
+                "tags": ["text", "format"],
+                "displayName": "Format User Input",
+                "modelDescription": "Format and polish user-provided text for chat use (concise, polish, or none).",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "text": { "type": "string" },
+                        "style": { "type": "string", "enum": ["concise", "polish", "none"] }
+                    },
+                    "required": ["text"]
                 }
             }
         ]
