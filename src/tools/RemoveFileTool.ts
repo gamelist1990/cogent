@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import { preInvokeHint, postSuccessHint, postErrorHint } from './AgentToolHelpers';
 
 interface IRemoveParams {
     path: string;
@@ -31,12 +32,14 @@ export class RemoveFileTool implements vscode.LanguageModelTool<IRemoveParams> {
 
             const targetUri = vscode.Uri.file(targetFsPath);
 
-            // Confirm existence
+        // Confirm existence
             try {
                 await vscode.workspace.fs.stat(targetUri);
             } catch (err) {
                 return new vscode.LanguageModelToolResult([
-                    new vscode.LanguageModelTextPart(`Path ${options.input.path} does not exist.`)
+            new vscode.LanguageModelTextPart(preInvokeHint('RemoveFileTool', options.input.path)),
+            new vscode.LanguageModelTextPart(`Path ${options.input.path} does not exist.`),
+            new vscode.LanguageModelTextPart(postErrorHint('RemoveFileTool', (err as Error)?.message))
                 ]);
             }
 
@@ -44,11 +47,14 @@ export class RemoveFileTool implements vscode.LanguageModelTool<IRemoveParams> {
             await vscode.workspace.fs.delete(targetUri, { recursive: !!options.input.recursive, useTrash: false });
 
             return new vscode.LanguageModelToolResult([
-                new vscode.LanguageModelTextPart(`Deleted ${options.input.path}`)
+                new vscode.LanguageModelTextPart(preInvokeHint('RemoveFileTool', options.input.path)),
+                new vscode.LanguageModelTextPart(`Deleted ${options.input.path}`),
+                new vscode.LanguageModelTextPart(postSuccessHint('RemoveFileTool'))
             ]);
         } catch (err: unknown) {
             return new vscode.LanguageModelToolResult([
-                new vscode.LanguageModelTextPart(`Error deleting path: ${(err as Error)?.message}`)
+                new vscode.LanguageModelTextPart(preInvokeHint('RemoveFileTool', options.input.path)),
+                new vscode.LanguageModelTextPart(postErrorHint('RemoveFileTool', (err as Error)?.message))
             ]);
         }
     }

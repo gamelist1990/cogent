@@ -134,6 +134,10 @@ Found a bug? Want to make Cogent even more awesome? We love contributions! Just:
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a PR and do a little victory dance 💃
 
+## 🤖 Agent Guidelines
+
+Automated agents and Copilot-like tools should follow the repository's agent behavior rules described in `AGENT_GUIDELINES.md`. In short: always run `list_code_usages` to discover definition and references before editing code, and run `get_errors` after edits and fix any errors until none remain.
+
 ## 🐛 Bug Reports
 
 If something's not working quite right:

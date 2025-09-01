@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import { preInvokeHint, postSuccessHint, postErrorHint } from './AgentToolHelpers';
 
 interface ICreateParams {
     path: string;
@@ -80,11 +81,14 @@ export class CreateFileTool implements vscode.LanguageModelTool<ICreateParams> {
             await vscode.workspace.fs.writeFile(targetUri, content);
 
             return new vscode.LanguageModelToolResult([
-                new vscode.LanguageModelTextPart(`Created ${options.input.path}`)
+                new vscode.LanguageModelTextPart(preInvokeHint('CreateFileTool', options.input.path)),
+                new vscode.LanguageModelTextPart(`Created file at ${options.input.path}`),
+                new vscode.LanguageModelTextPart(postSuccessHint('CreateFileTool'))
             ]);
         } catch (err: unknown) {
             return new vscode.LanguageModelToolResult([
-                new vscode.LanguageModelTextPart(`Error creating file: ${(err as Error)?.message}`)
+                new vscode.LanguageModelTextPart(preInvokeHint('CreateFileTool', options.input.path)),
+                new vscode.LanguageModelTextPart(postErrorHint('CreateFileTool', (err as Error)?.message))
             ]);
         }
     }
