@@ -21,31 +21,68 @@ export function isTsxToolUserMetadata(obj: unknown): obj is TsxToolUserMetadata 
         Array.isArray((obj as TsxToolUserMetadata).toolCallsMetadata.toolCallRounds);
 }
 
-// --- 追加: 安全に stream を扱うユーティリティ ---
+// --- 追加: 安全に model.sendRequest のレスポンスを扱うユーティリティ ---
 function isAsyncIterable(obj: any): obj is AsyncIterable<any> {
     return !!obj && typeof obj[Symbol.asyncIterator] === 'function';
 }
 
-async function consumeStreamSafely(stream: AsyncIterable<any> | undefined,
+/**
+ * model.sendRequest のレスポンスは実装によって形が異なるため、
+ * - AsyncIterable (直接)
+ * - { stream: AsyncIterable }
+ * - Array of parts
+ * - { parts: Array }
+ * のいずれにも対応して安全にパートを反復処理します。
+ */
+async function consumeResponsePartsSafely(response: any,
     onPart: (part: any) => Promise<void> | void, token?: vscode.CancellationToken) {
-    if (!isAsyncIterable(stream)) {
-        // 非ストリーム応答を無視して安全に戻る
-        console.warn('consumeStreamSafely: response.stream is not async iterable');
-        return;
-    }
     try {
-        for await (const part of stream) {
-            if (token?.isCancellationRequested) break;
-            try {
-                await onPart(part);
-            } catch (innerErr) {
-                // 個々のパート処理で例外が出てもループ継続
-                console.warn('Error processing stream part:', innerErr);
+        // 1) response が AsyncIterable の場合
+        if (isAsyncIterable(response)) {
+            for await (const part of response) {
+                if (token?.isCancellationRequested) break;
+                try { await onPart(part); } catch (e) { console.warn('Error processing stream part:', e); }
             }
+            return;
         }
+
+        // 2) response.stream が AsyncIterable の場合
+        if (response && isAsyncIterable(response.stream)) {
+            for await (const part of response.stream) {
+                if (token?.isCancellationRequested) break;
+                try { await onPart(part); } catch (e) { console.warn('Error processing stream part:', e); }
+            }
+            return;
+        }
+
+        // 3) response が配列（parts の配列など）の場合
+        if (Array.isArray(response)) {
+            for (const part of response) {
+                if (token?.isCancellationRequested) break;
+                try { await onPart(part); } catch (e) { console.warn('Error processing array part:', e); }
+            }
+            return;
+        }
+
+        // 4) response.parts が配列の場合
+        if (response && Array.isArray(response.parts)) {
+            for (const part of response.parts) {
+                if (token?.isCancellationRequested) break;
+                try { await onPart(part); } catch (e) { console.warn('Error processing parts array part:', e); }
+            }
+            return;
+        }
+
+        // 5) 単一のテキスト値や value を持つ場合は単発で処理
+        if (response && (typeof response === 'string' || (response.value && typeof response.value === 'string'))) {
+            try { await onPart(response.value ? { value: response.value } : { value: response }); } catch (e) { console.warn('Error processing single-part response:', e); }
+            return;
+        }
+
+        // 6) どれにも当てはまらない場合はログに残して終了
+        console.warn('consumeResponsePartsSafely: response had no iterable parts', response);
     } catch (err) {
-        // 全体のストリーム消費でエラーが起きてもハンドルして終了（Invalid stream 等の防止）
-        console.warn('Error consuming stream:', err);
+        console.warn('Error consuming response parts safely:', err);
     }
 }
 // --- 追加ここまで ---
@@ -220,7 +257,7 @@ ${compressedSummary}
                             attempt++;
                             const resp = await (model as any).sendRequest(msg, { justification: 'history-summary' } as any, token);
                             let summaryText = '';
-                            await consumeStreamSafely((resp as any).stream, (part: any) => {
+                            await consumeResponsePartsSafely(resp, (part: any) => {
                                 if (part instanceof vscode.LanguageModelTextPart) {
                                     summaryText += part.value;
                                 } else if ((part as any).value && typeof (part as any).value === 'string') {
@@ -327,7 +364,7 @@ ${compressedSummary}
             const toolCalls: vscode.LanguageModelToolCallPart[] = [];
             let responseStr = '';
 
-            await consumeStreamSafely((response as any).stream, (part: any) => {
+            await consumeResponsePartsSafely(response, (part: any) => {
                 if (part instanceof vscode.LanguageModelTextPart) {
                     // チャット UI にストリーム状に出力
                     try { stream.markdown(part.value); } catch { /* ignore */ }
