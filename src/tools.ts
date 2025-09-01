@@ -9,4 +9,6 @@ import { WebSearchTool } from './tools/WebSearchTool';
 import { FetchWebpageTool } from './tools/FetchWebpageTool';
 import { GetVscodeApiTool } from './tools/GetVscodeApiTool';
 import { ThinkTool } from './tools/ThinkTool';
+import { SemanticSearchTool } from './tools/SemanticSearchTool';
 export { FileReadTool, FileWriteTool, FileUpdateTool, CommandRunTool, ApplyDiffTool, RemoveFileTool, GetChangedFilesTool, WebSearchTool, FetchWebpageTool, GetVscodeApiTool, ThinkTool };
+export { SemanticSearchTool };

@@ -55,6 +55,8 @@ export class CommandRunTool implements vscode.LanguageModelTool<ICommandParams> 
             const terminalName = options.input.terminalName || 'Cogent Runner';
             const workspaceCwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 
+            // バッファ上限を設け、端末出力の正規化と自動 dispose を抑制する
+            const MAX_BUFFER = 200_000;
             let buffer = '';
             let child: ChildProcess | undefined;
 
@@ -68,26 +70,29 @@ export class CommandRunTool implements vscode.LanguageModelTool<ICommandParams> 
                     try {
                         child = spawn(command, { shell: true, cwd: workspaceCwd });
 
-                        child.stdout?.on('data', (d: Buffer) => {
-                            const s = d.toString();
+                        const writeChunk = (d: Buffer) => {
+                            let s = d.toString();
+                            // normalize newlines to CRLF to avoid terminal formatting bugs
+                            s = s.replace(/\r\n|\n|\r/g, '\\r\\n');
                             buffer += s;
-                            emitter.fire(s);
-                        });
-                        child.stderr?.on('data', (d: Buffer) => {
-                            const s = d.toString();
-                            buffer += s;
-                            emitter.fire(s);
-                        });
+                            if (buffer.length > MAX_BUFFER) {
+                                buffer = buffer.slice(-MAX_BUFFER);
+                            }
+                            try { emitter.fire(s); } catch {}
+                        };
+
+                        child.stdout?.on('data', writeChunk);
+                        child.stderr?.on('data', writeChunk);
 
                         child.on('close', (code) => {
                             try { emitter.fire('\r\n'); } catch {}
-                            try { emitter.dispose(); } catch {}
+                            // 重要: emitter.dispose() / terminal.dispose() は行わず
+                            // ユーザーが出力を確認できるようにする
                             resolveExit?.(typeof code === 'number' ? code : 0);
                         });
                     } catch (err) {
-                        const msg = `Error spawning process: ${(err as Error).message}`;
-                        try { emitter.fire(msg + '\r\n'); } catch {}
-                        try { emitter.dispose(); } catch {}
+                        const msg = `Error spawning process: ${(err as Error).message}\r\n`;
+                        try { emitter.fire(msg); } catch {}
                         resolveExit?.(-1);
                     }
                 },
@@ -107,10 +112,10 @@ export class CommandRunTool implements vscode.LanguageModelTool<ICommandParams> 
                 new Promise<number>((resolve) => setTimeout(() => {
                     try { child?.kill(); } catch {}
                     resolve(-1);
-                }, 15000))
+                }, 60000))
             ]);
 
-            try { streamTerm.dispose(); } catch {}
+            // ターミナルは自動で破棄しない。ユーザーが手動で閉じられるようにする。
 
             logger.info(`Streaming process finished with code ${exitCode} for command: ${command}`);
 
