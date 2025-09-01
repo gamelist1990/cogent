@@ -25,6 +25,11 @@
                 "command": "cogent.formatUserInput",
                 "title": "Cogent: Format User Input",
                 "category": "Cogent"
+            },
+            {
+                "command": "cogent.send",
+                "title": "Cogent: Send Prompt",
+                "category": "Cogent"
             }
         ],
         "configuration": {
