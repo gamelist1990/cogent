@@ -17,12 +17,36 @@ export class CreateFileTool implements vscode.LanguageModelTool<ICreateParams> {
             if (!workspaceFolder) {
                 throw new Error('No workspace folder found');
             }
+            const rawPath = (options.input.path ?? '').toString().trim();
+            if (!rawPath) {
+                throw new Error('Path is required (provide a path relative to the workspace root)');
+            }
+            // Determine target filesystem path. Allow absolute paths if explicitly configured.
+            const isWindowsDrive = /^[a-zA-Z]:\\/.test(rawPath) || /^[a-zA-Z]:\//.test(rawPath);
+            const isAbsolutePath = path.isAbsolute(rawPath) || isWindowsDrive;
 
-            if (!options.input.path) {
-                throw new Error('Path is required');
+            let targetFsPath: string;
+            if (isAbsolutePath) {
+                targetFsPath = path.normalize(rawPath);
+            } else {
+                targetFsPath = path.normalize(path.resolve(workspaceFolder.uri.fsPath, rawPath));
             }
 
-            const targetUri = vscode.Uri.file(path.join(workspaceFolder.uri.fsPath, options.input.path));
+            const relative = path.relative(workspaceFolder.uri.fsPath, targetFsPath);
+            const outsideWorkspace = relative.startsWith('..') || (relative === '' && isAbsolutePath && path.normalize(targetFsPath) !== path.normalize(path.resolve(workspaceFolder.uri.fsPath)));
+
+            if (outsideWorkspace) {
+                const allowExternal = vscode.workspace.getConfiguration('cogent').get('allowExternalFileCreation', false);
+                if (!allowExternal) {
+                    return new vscode.LanguageModelToolResult([
+                        new vscode.LanguageModelTextPart(
+                            'Refusing to create files outside the workspace root. To allow this, enable `cogent.allowExternalFileCreation` in settings.'
+                        )
+                    ]);
+                }
+            }
+
+            const targetUri = vscode.Uri.file(targetFsPath);
 
             // Check existence
             let exists = true;
@@ -38,14 +62,18 @@ export class CreateFileTool implements vscode.LanguageModelTool<ICreateParams> {
                 ]);
             }
 
-            // Ensure parent directory exists
+            // Ensure parent directory exists (create if necessary)
             const dir = path.dirname(targetUri.fsPath);
             const dirUri = vscode.Uri.file(dir);
-            try {
-                await vscode.workspace.fs.stat(dirUri);
-            } catch (err) {
-                // create directories recursively
-                await vscode.workspace.fs.createDirectory(dirUri);
+            const dirRoot = path.parse(dir).root;
+            // Avoid attempting to create the drive root itself (e.g., "C:\")
+            if (dir !== dirRoot) {
+                try {
+                    await vscode.workspace.fs.stat(dirUri);
+                } catch (err) {
+                    // create directories recursively
+                    await vscode.workspace.fs.createDirectory(dirUri);
+                }
             }
 
             const content = Buffer.from(options.input.content ?? '', 'utf8');

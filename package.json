@@ -100,6 +100,12 @@
                     "default": 60,
                     "description": "Timeout in seconds for terminal commands",
                     "order": 4
+                },
+                "cogent.allowExternalFileCreation": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Allow CreateFileTool to create files outside the workspace root when enabled (use with caution).",
+                    "order": 4.5
                 }
             }
         },
