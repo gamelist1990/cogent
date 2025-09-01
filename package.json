@@ -19,6 +19,9 @@
 	},
     
     "main": "./out/extension.js",
+    "activationEvents": [
+        "onChatParticipant:cogent.assistant"
+    ],
     "contributes": {
         "configuration": {
             "title": "Cogent",
