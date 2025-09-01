@@ -2,7 +2,7 @@ import { FileReadTool } from './tools/FileReadTool';
 import { FileWriteTool } from './tools/FileWriteTool';
 import { FileUpdateTool } from './tools/FileUpdateTool';
 import { CommandRunTool } from './tools/CommandRunTool';
-import { ApplyDiffTool } from './tools/ApplyDiffTool';
+import { ApplyDiffTool } from './tools/ApplyDiffTool2';
 import { RemoveFileTool } from './tools/RemoveFileTool';
 import { GetChangedFilesTool } from './tools/GetChangedFilesTool';
 import { WebSearchTool } from './tools/WebSearchTool';

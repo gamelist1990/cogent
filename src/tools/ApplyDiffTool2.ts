@@ -6,15 +6,17 @@ import { UnsavedChangesDetector } from '../components/UnsavedChangesDetector';
 import { Logger } from '../components/Logger';
 
 // Types
-type DiffResult = 
-  | { success: true; content: string }
-  | { success: false; error: string; details?: { 
-      similarity?: number;
-      threshold?: number;
-      matchedRange?: { start: number; end: number };
-      searchContent?: string;
-      bestMatch?: string;
-    }};
+type DiffResult =
+    | { success: true; content: string }
+    | {
+        success: false; error: string; details?: {
+            similarity?: number;
+            threshold?: number;
+            matchedRange?: { start: number; end: number };
+            searchContent?: string;
+            bestMatch?: string;
+        }
+    };
 
 // Helper functions
 function levenshteinDistance(a: string, b: string): number {
@@ -29,13 +31,13 @@ function levenshteinDistance(a: string, b: string): number {
 
     for (let i = 1; i <= a.length; i++) {
         for (let j = 1; j <= b.length; j++) {
-            if (a[i-1] === b[j-1]) {
-                matrix[i][j] = matrix[i-1][j-1];
+            if (a[i - 1] === b[j - 1]) {
+                matrix[i][j] = matrix[i - 1][j - 1];
             } else {
                 matrix[i][j] = Math.min(
-                    matrix[i-1][j-1] + 1,
-                    matrix[i][j-1] + 1,
-                    matrix[i-1][j] + 1
+                    matrix[i - 1][j - 1] + 1,
+                    matrix[i][j - 1] + 1,
+                    matrix[i - 1][j] + 1
                 );
             }
         }
@@ -50,11 +52,12 @@ function getSimilarity(original: string, search: string): number {
     const normalizeStr = (str: string) => str.replace(/\s+/g, ' ').trim();
     const normalizedOriginal = normalizeStr(original);
     const normalizedSearch = normalizeStr(search);
-    
+
     if (normalizedOriginal === normalizedSearch) return 1;
-    
+
     const distance = levenshteinDistance(normalizedOriginal, normalizedSearch);
     const maxLength = Math.max(normalizedOriginal.length, normalizedSearch.length);
+    if (maxLength === 0) return 1;
     return 1 - (distance / maxLength);
 }
 
@@ -90,7 +93,8 @@ class SearchReplaceDiffStrategy {
     private readonly BUFFER_LINES = 20;
 
     constructor(fuzzyThreshold?: number, bufferLines?: number) {
-        this.fuzzyThreshold = fuzzyThreshold ?? 1.0;
+        // Lower default threshold to be more permissive while still reporting similarity
+        this.fuzzyThreshold = fuzzyThreshold ?? 0.75;
         this.bufferLines = bufferLines ?? this.BUFFER_LINES;
     }
 
@@ -150,7 +154,7 @@ class SearchReplaceDiffStrategy {
 
             const originalChunk = originalLines.slice(exactStartIndex, exactEndIndex + 1).join('\n');
             const similarity = getSimilarity(originalChunk, searchChunk);
-            
+
             if (similarity >= this.fuzzyThreshold) {
                 matchIndex = exactStartIndex;
                 bestMatchScore = similarity;
@@ -163,13 +167,14 @@ class SearchReplaceDiffStrategy {
 
         // Middle-out search if no exact match found
         if (matchIndex === -1) {
+            const windowSize = Math.max(1, searchLines.length);
             const midPoint = Math.floor((searchStartIndex + searchEndIndex) / 2);
             let leftIndex = midPoint;
             let rightIndex = midPoint + 1;
 
-            while (leftIndex >= searchStartIndex || rightIndex <= searchEndIndex - searchLines.length) {
+            while (leftIndex >= searchStartIndex || rightIndex <= searchEndIndex - windowSize) {
                 if (leftIndex >= searchStartIndex) {
-                    const chunk = originalLines.slice(leftIndex, leftIndex + searchLines.length).join('\n');
+                    const chunk = originalLines.slice(leftIndex, leftIndex + windowSize).join('\n');
                     const similarity = getSimilarity(chunk, searchChunk);
                     if (similarity > bestMatchScore) {
                         bestMatchScore = similarity;
@@ -179,8 +184,8 @@ class SearchReplaceDiffStrategy {
                     leftIndex--;
                 }
 
-                if (rightIndex <= searchEndIndex - searchLines.length) {
-                    const chunk = originalLines.slice(rightIndex, rightIndex + searchLines.length).join('\n');
+                if (rightIndex <= searchEndIndex - windowSize) {
+                    const chunk = originalLines.slice(rightIndex, rightIndex + windowSize).join('\n');
                     const similarity = getSimilarity(chunk, searchChunk);
                     if (similarity > bestMatchScore) {
                         bestMatchScore = similarity;
@@ -210,7 +215,7 @@ class SearchReplaceDiffStrategy {
 
             const lineRange = startLine || endLine ?
                 ` at ${startLine ? `start: ${startLine}` : 'start'} to ${endLine ? `end: ${endLine}` : 'end'}` : '';
-                
+
             return {
                 success: false,
                 error: `No sufficiently similar match found${lineRange} (${Math.floor(bestMatchScore * 100)}% similar, needs ${Math.floor(this.fuzzyThreshold * 100)}%)\n\nDebug Info:\n- Similarity Score: ${Math.floor(bestMatchScore * 100)}%\n- Required Threshold: ${Math.floor(this.fuzzyThreshold * 100)}%\n- Search Range: ${startLine && endLine ? `lines ${startLine}-${endLine}` : 'start to end'}\n\nSearch Content:\n${addLineNumbers(searchChunk)}${bestMatchSection}${originalContentSection}`
@@ -233,15 +238,15 @@ class SearchReplaceDiffStrategy {
             const currentIndentMatch = line.match(/^[\t ]*/);
             const currentIndent = currentIndentMatch ? currentIndentMatch[0] : '';
             const searchBaseIndent = searchIndents[0] || '';
-            
+
             const searchBaseLevel = searchBaseIndent.length;
             const currentLevel = currentIndent.length;
             const relativeLevel = currentLevel - searchBaseLevel;
-            
+
             const finalIndent = relativeLevel < 0
                 ? matchedIndent.slice(0, Math.max(0, matchedIndent.length + relativeLevel))
                 : matchedIndent + currentIndent.slice(searchBaseLevel);
-            
+
             return finalIndent + line.trim();
         });
 
@@ -249,6 +254,7 @@ class SearchReplaceDiffStrategy {
         const afterMatch = originalLines.slice(matchIndex + searchLines.length);
         const finalContent = [...beforeMatch, ...indentedReplaceLines, ...afterMatch].join(lineEnding);
 
+        // Include metadata by attaching to error/details if needed by caller
         return {
             success: true,
             content: finalContent
@@ -288,61 +294,44 @@ export class ApplyDiffTool implements vscode.LanguageModelTool<ApplyDiffInput> {
         const logger = Logger.getInstance();
 
         try {
-            // Open the document if not already open
-            let document = vscode.workspace.textDocuments.find(doc => doc.uri.toString() === uri.toString());
-            if (!document) {
-                document = await vscode.workspace.openTextDocument(uri);
+            // Create backup in workspace .cogent_backups
+            const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+            if (!workspaceFolder) throw new Error('No workspace folder found');
+            const backupsDir = vscode.Uri.joinPath(workspaceFolder.uri, '.cogent_backups');
+            try { await vscode.workspace.fs.stat(backupsDir); } catch { await vscode.workspace.fs.createDirectory(backupsDir); }
+
+            const timestamp = Date.now();
+            const backupUri = vscode.Uri.joinPath(backupsDir, path.basename(filePath) + `.${timestamp}.bak`);
+
+            // Read current disk content for backup
+            let currentDiskContent = '';
+            try {
+                const bytes = await vscode.workspace.fs.readFile(uri);
+                currentDiskContent = Buffer.from(bytes).toString('utf8');
+            } catch (e) {
+                // If file doesn't exist on disk, treat as empty backup
+                currentDiskContent = '';
             }
 
-            // Backup current content
-            const backupContent = document.getText();
+            await vscode.workspace.fs.writeFile(backupUri, new TextEncoder().encode(currentDiskContent));
+            logger.info(`Backup written to ${backupUri.fsPath}`);
 
-            // Listen for changes to verify the edit
-            let changeDetected = false;
-            const changeListener = vscode.workspace.onDidChangeTextDocument(event => {
-                if (event.document.uri.toString() === uri.toString()) {
-                    changeDetected = true;
-                }
-            });
+            // Write new content directly to disk
+            await vscode.workspace.fs.writeFile(uri, new TextEncoder().encode(newContent));
 
-            // Apply the edit
-            const edit = new vscode.WorkspaceEdit();
-            const fullRange = new vscode.Range(0, 0, document.lineCount, 0);
-            edit.replace(uri, fullRange, newContent);
-
-            const success = await vscode.workspace.applyEdit(edit);
-
-            if (!success) {
-                logger.warn(`Failed to apply edit to ${filePath}`);
-                throw new Error('Workspace edit failed');
-            }
-
-            // Wait a bit for the change to be detected
+            // Small delay to allow editors to pick up changes
             await new Promise(resolve => setTimeout(resolve, 100));
 
-            if (!changeDetected) {
-                logger.warn(`No change detected after applying edit to ${filePath}`);
-                // Restore backup
-                const restoreEdit = new vscode.WorkspaceEdit();
-                restoreEdit.replace(uri, fullRange, backupContent);
-                await vscode.workspace.applyEdit(restoreEdit);
-                throw new Error('Change not applied successfully');
+            // Verify content
+            const updatedBytes = await vscode.workspace.fs.readFile(uri);
+            const updated = Buffer.from(updatedBytes).toString('utf8');
+            if (updated !== newContent) {
+                // Attempt rollback
+                await vscode.workspace.fs.writeFile(uri, new TextEncoder().encode(currentDiskContent));
+                throw new Error('Verification failed after writing file; rolled back to backup');
             }
 
-            // Verify the content
-            const updatedDocument = vscode.workspace.textDocuments.find(doc => doc.uri.toString() === uri.toString());
-            if (updatedDocument && updatedDocument.getText() !== newContent) {
-                logger.warn(`Content mismatch after applying edit to ${filePath}`);
-                // Restore backup
-                const restoreEdit = new vscode.WorkspaceEdit();
-                restoreEdit.replace(uri, fullRange, backupContent);
-                await vscode.workspace.applyEdit(restoreEdit);
-                throw new Error('Content verification failed');
-            }
-
-            changeListener.dispose();
-            logger.info(`Successfully applied diff to ${filePath}`);
-
+            logger.info(`Successfully applied diff to ${filePath}. Backup: ${backupUri.fsPath}`);
         } catch (error) {
             logger.error(`Error in safeApplyDiff for ${filePath}: ${error}`);
             throw error;
@@ -360,7 +349,7 @@ export class ApplyDiffTool implements vscode.LanguageModelTool<ApplyDiffInput> {
             }
 
             const fullPath = path.join(workspaceFolder.uri.fsPath, options.input.path);
-            
+
             // Prevent operating on directories
             try {
                 const stat = await fs.stat(fullPath);
@@ -387,62 +376,53 @@ export class ApplyDiffTool implements vscode.LanguageModelTool<ApplyDiffInput> {
                 options.input.end_line
             );
 
-            // Before showing/applying, try to extract a candidate symbol from the diff for usage lookup
+            // Try to compute similarity between the matched area and search to show in preview
+            let similarity = undefined as number | undefined;
             try {
                 const searchMatch = options.input.diff.match(/<<<<<<< SEARCH\n([\s\S]*?)\n?=======/);
-                const searchContent = searchMatch ? searchMatch[1] : options.input.diff;
-                const candidateSymbol = (function extract(content: string): string | undefined {
-                    if (!content) return undefined;
-                    const fn = content.match(/(?:function|def)\s+([A-Za-z_][\w]*)/);
-                    if (fn) return fn[1];
-                    const cl = content.match(/class\s+([A-Za-z_][\w]*)/);
-                    if (cl) return cl[1];
-                    const id = content.match(/\b([A-Za-z_][\w]{2,})\b/);
-                    return id ? id[1] : undefined;
-                })(searchContent);
-
-                if (candidateSymbol) {
-                    try {
-                        const token = new vscode.CancellationTokenSource().token;
-                        const res = await vscode.lm.invokeTool('cogent_getVscodeApi', { input: { action: 'list_code_usages', symbol: { name: candidateSymbol } }, toolInvocationToken: undefined }, token);
-                        const anyRes: any = res;
-                        const usages = (anyRes?.parts ?? []).map((p: any) => p?.text ?? p?.value ?? '').join('\n') ?? '';
-                        if (usages) {
-                            // Prepend usage info to response
-                            const infoPart = `Detected usages for symbol '${candidateSymbol}':\n${usages}\n\n`;
-                            // If result is success, attach to content response later by storing in a variable
-                            // We'll include it in the response after diff view update
-                            (result as any)._usageInfo = infoPart;
-                        }
-                    } catch {
-                        // ignore
+                const searchContent = searchMatch ? searchMatch[1] : '';
+                if (searchContent) {
+                    // Try to find best match chunk in baseContent to compute similarity
+                    const lines = baseContent.split(/\r?\n/);
+                    const searchLines = searchContent.split(/\r?\n/);
+                    let best = 0;
+                    for (let i = 0; i + searchLines.length <= lines.length; i++) {
+                        const chunk = lines.slice(i, i + searchLines.length).join('\n');
+                        const s = getSimilarity(chunk, searchContent);
+                        if (s > best) best = s;
                     }
+                    similarity = best;
                 }
             } catch {
-                // ignore symbol extraction errors
+                // ignore similarity errors
             }
 
             if (!result.success) {
+                // Show diff view with debug info
+                this.diffView = new DiffView(fullPath, baseContent, baseContent, { similarity: similarity ?? 0, search: options.input.diff, threshold: 0.75 });
+                await this.diffView.show();
+
                 throw new Error(result.error);
             }
 
-            // Show diff view with current content as base
-            this.diffView = new DiffView(fullPath, baseContent);
+            // Show diff view (side-by-side) with similarity metadata and then apply automatically
+            this.diffView = new DiffView(fullPath, baseContent, result.content, { similarity: similarity ?? 1, search: options.input.diff, threshold: 0.75 });
             await this.diffView.show();
-            
-            // Apply changes safely using VS Code API
+
+            // Automatically apply changes (user requested fully automatic)
             await this.safeApplyDiff(fullPath, result.content);
 
-            // Get the latest content with unsaved changes
+            // Attempt to surface current file state (prefer editor unsaved if present)
             const unsavedResult = await UnsavedChangesDetector.detectChanges(options.input.path);
             const currentContent = unsavedResult.editorContent || result.content;
-            
-            // Create response with current file state
+
+            const responseHeader = [`Changes applied to ${options.input.path}.`, `Similarity: ${similarity !== undefined ? (Math.floor(similarity * 100) + '%') : 'n/a'}`, `Backup directory: .cogent_backups`].join(' ');
+
             const response = [
-                `Changes shown in diff view for ${options.input.path}.`,
+                responseHeader,
                 '',
                 'Current file state:',
-                '=' .repeat(80),
+                '='.repeat(80),
                 this.addLineNumbers(currentContent)
             ].join('\n');
 
@@ -467,24 +447,10 @@ export class ApplyDiffTool implements vscode.LanguageModelTool<ApplyDiffInput> {
         options: vscode.LanguageModelToolInvocationPrepareOptions<ApplyDiffInput>,
         _token: vscode.CancellationToken
     ) {
-        const autoConfirm = vscode.workspace.getConfiguration('cogent').get('autoConfirmTools.applyDiff', false);
-        
-        if (autoConfirm) {
-            return {
-                invocationMessage: `Applying diff to ${options.input.path} (lines ${options.input.start_line}-${options.input.end_line})`
-            };
-        }
-
+        // User requested fully automatic behavior (no interactive confirmation).
+        // We still provide a clear invocation message but do not require confirmation.
         return {
-            invocationMessage: `Applying diff to ${options.input.path} (lines ${options.input.start_line}-${options.input.end_line})`,
-            confirmationMessages: {
-                title: 'Apply Diff',
-                message: new vscode.MarkdownString(
-                    `Apply diff to ${options.input.path} between lines ${options.input.start_line}-${options.input.end_line}?`
-                )
-            }
+            invocationMessage: `Applying diff to ${options.input.path} (lines ${options.input.start_line}-${options.input.end_line})`
         };
     }
 }
-
-

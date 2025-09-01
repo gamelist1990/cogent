@@ -7,40 +7,55 @@ export class DiffView {
     private static contentProvider: vscode.TextDocumentContentProvider;
     private static registration: vscode.Disposable;
     private static content = new Map<string, string>();
+    private static emitter = new vscode.EventEmitter<vscode.Uri>();
 
     private originalUri: vscode.Uri;
     private modifiedUri: vscode.Uri;
     private document?: vscode.TextDocument;
     private disposables: vscode.Disposable[] = [];
 
-    constructor(filePath: string, originalContent: string) {
+    constructor(filePath: string, originalContent: string, modifiedContent: string, metadata?: { similarity?: number; matchedRange?: { start: number; end: number }; search?: string; threshold?: number }) {
         this.originalUri = vscode.Uri.file(filePath);
-        this.modifiedUri = this.originalUri.with({ scheme: DiffView.scheme });
-        
+        // Use query param to ensure unique uri so provider updates refresh the diff view
+        this.modifiedUri = this.originalUri.with({ scheme: DiffView.scheme, query: String(Date.now()) });
+
         // Initialize static content provider if not exists
         if (!DiffView.contentProvider) {
             DiffView.contentProvider = {
                 provideTextDocumentContent: (uri: vscode.Uri) => {
                     return DiffView.content.get(uri.toString()) || '';
                 },
-                onDidChange: new vscode.EventEmitter<vscode.Uri>().event
+                onDidChange: DiffView.emitter.event
             };
             DiffView.registration = vscode.workspace.registerTextDocumentContentProvider(
                 DiffView.scheme,
                 DiffView.contentProvider
             );
         }
-        
-        // Store the original content
-        DiffView.content.set(this.modifiedUri.toString(), originalContent);
+
+        // Store the modified content with metadata header for richer preview
+        const headerLines: string[] = [];
+        headerLines.push(`// Cogent Diff Preview: ${path.basename(filePath)}`);
+        if (metadata) {
+            if (typeof metadata.similarity === 'number') headerLines.push(`// Similarity: ${(metadata.similarity * 100).toFixed(1)}%`);
+            if (metadata.matchedRange) headerLines.push(`// Matched lines: ${metadata.matchedRange.start}-${metadata.matchedRange.end}`);
+            if (typeof metadata.threshold === 'number') headerLines.push(`// Required threshold: ${(metadata.threshold * 100).toFixed(1)}%`);
+            if (metadata.search) {
+                headerLines.push(`// Search excerpt:`);
+                headerLines.push(`// ${metadata.search.split('\n').slice(0,5).map(l => l.replace(/\r?\n/g,' ')).join(' | ')}`);
+            }
+        }
+        headerLines.push('');
+
+        DiffView.content.set(this.modifiedUri.toString(), `${headerLines.join('\n')}\n${modifiedContent}`);
     }
 
     async show(): Promise<boolean> {
         try {
             const logger = Logger.getInstance();
-            // Open the file first
+            // Open the file first (ensures document exists in editor context)
             this.document = await vscode.workspace.openTextDocument(this.originalUri);
-            
+
             // Add save listener
             this.disposables.push(
                 vscode.workspace.onDidSaveTextDocument(async doc => {
@@ -55,12 +70,12 @@ export class DiffView {
                     }
                 })
             );
-            
-            // Show diff editor
+
+            // Show diff editor (side-by-side preferred)
             await vscode.commands.executeCommand('vscode.diff',
                 this.modifiedUri,
                 this.originalUri,
-                `${path.basename(this.originalUri.fsPath)} (Working Tree)`,
+                `${path.basename(this.originalUri.fsPath)} (Preview)`,
                 { preview: true }
             );
 
@@ -72,74 +87,27 @@ export class DiffView {
         }
     }
 
-    async update(content: string, _line: number) {
-        if (!this.document) return;
-
-        const logger = Logger.getInstance();
-        const backupContent = this.document.getText();
-
-        try {
-            // Listen for changes to verify the edit
-            let changeDetected = false;
-            const changeListener = vscode.workspace.onDidChangeTextDocument(event => {
-                if (event.document.uri.toString() === this.originalUri.toString()) {
-                    changeDetected = true;
-                }
-            });
-
-            const edit = new vscode.WorkspaceEdit();
-            const fullRange = new vscode.Range(
-                0, 0,
-                this.document.lineCount, 0
-            );
-            
-            edit.replace(this.originalUri, fullRange, content);
-            const success = await vscode.workspace.applyEdit(edit);
-
-            if (!success) {
-                logger.warn(`Failed to apply edit to ${this.originalUri.fsPath}`);
-                throw new Error('Workspace edit failed');
+    /**
+     * Update the modified pane content and emit change so the diff view refreshes
+     */
+    update(modifiedContent: string, metadata?: { similarity?: number; matchedRange?: { start: number; end: number }; search?: string; threshold?: number }) {
+        if (!this.modifiedUri) return;
+        const headerLines: string[] = [];
+        headerLines.push(`// Cogent Diff Preview: ${path.basename(this.originalUri.fsPath)}`);
+        if (metadata) {
+            if (typeof metadata.similarity === 'number') headerLines.push(`// Similarity: ${(metadata.similarity * 100).toFixed(1)}%`);
+            if (metadata.matchedRange) headerLines.push(`// Matched lines: ${metadata.matchedRange.start}-${metadata.matchedRange.end}`);
+            if (typeof metadata.threshold === 'number') headerLines.push(`// Required threshold: ${(metadata.threshold * 100).toFixed(1)}%`);
+            if (metadata.search) {
+                headerLines.push(`// Search excerpt:`);
+                headerLines.push(`// ${metadata.search.split('\n').slice(0,5).map(l => l.replace(/\r?\n/g,' ')).join(' | ')}`);
             }
-
-            // Wait a bit for the change to be detected
-            await new Promise(resolve => setTimeout(resolve, 100));
-
-            if (!changeDetected) {
-                logger.warn(`No change detected after applying edit to ${this.originalUri.fsPath}`);
-                // Restore backup
-                const restoreEdit = new vscode.WorkspaceEdit();
-                restoreEdit.replace(this.originalUri, fullRange, backupContent);
-                await vscode.workspace.applyEdit(restoreEdit);
-                throw new Error('Change not applied successfully');
-            }
-
-            // Verify the content
-            const updatedDocument = vscode.workspace.textDocuments.find(doc => doc.uri.toString() === this.originalUri.toString());
-            if (updatedDocument && updatedDocument.getText() !== content) {
-                logger.warn(`Content mismatch after applying edit to ${this.originalUri.fsPath}`);
-                // Restore backup
-                const restoreEdit = new vscode.WorkspaceEdit();
-                restoreEdit.replace(this.originalUri, fullRange, backupContent);
-                await vscode.workspace.applyEdit(restoreEdit);
-                throw new Error('Content verification failed');
-            }
-
-            changeListener.dispose();
-            logger.info(`Successfully applied diff to ${this.originalUri.fsPath}`);
-
-        } catch (error) {
-            logger.error(`Error applying diff to ${this.originalUri.fsPath}: ${error}`);
-            // Try to restore backup
-            try {
-                const restoreEdit = new vscode.WorkspaceEdit();
-                const fullRange = new vscode.Range(0, 0, this.document.lineCount, 0);
-                restoreEdit.replace(this.originalUri, fullRange, backupContent);
-                await vscode.workspace.applyEdit(restoreEdit);
-            } catch (restoreError) {
-                logger.error(`Failed to restore backup: ${restoreError}`);
-            }
-            throw error;
         }
+        headerLines.push('');
+
+        DiffView.content.set(this.modifiedUri.toString(), `${headerLines.join('\n')}\n${modifiedContent}`);
+        // Emit change event for the modified uri so VS Code refreshes the diff editor
+        DiffView.emitter.fire(this.modifiedUri);
     }
 
     async close() {
@@ -155,5 +123,6 @@ export class DiffView {
             DiffView.registration.dispose();
         }
         DiffView.content.clear();
+        DiffView.emitter.dispose();
     }
 }
