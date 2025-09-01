@@ -68,10 +68,6 @@
                     },
                     "additionalProperties": false,
                     "default": {
-                        "writeFile": false,
-                        "updateFile": false,
-                        "runCommand": false,
-                        "applyDiff": false,
                         "removeFile": false
                     },
                     "description": "Configure which tools should auto-confirm their operations without showing confirmation dialog",
@@ -82,12 +78,6 @@
                     "default": false,
                     "description": "Enable debug logging in the output channel",
                     "order": 3
-                },
-                "cogent.inputTextFix": {
-                    "type": "boolean",
-                    "default": false,
-                    "description": "Use the language model to expand concise user input into a more detailed prompt before sending.",
-                    "order": 3.5
                 },
                 "cogent.commandTimeout": {
                     "type": "number",

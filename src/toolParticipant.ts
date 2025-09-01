@@ -21,6 +21,35 @@ export function isTsxToolUserMetadata(obj: unknown): obj is TsxToolUserMetadata 
         Array.isArray((obj as TsxToolUserMetadata).toolCallsMetadata.toolCallRounds);
 }
 
+// --- 追加: 安全に stream を扱うユーティリティ ---
+function isAsyncIterable(obj: any): obj is AsyncIterable<any> {
+    return !!obj && typeof obj[Symbol.asyncIterator] === 'function';
+}
+
+async function consumeStreamSafely(stream: AsyncIterable<any> | undefined,
+    onPart: (part: any) => Promise<void> | void, token?: vscode.CancellationToken) {
+    if (!isAsyncIterable(stream)) {
+        // 非ストリーム応答を無視して安全に戻る
+        console.warn('consumeStreamSafely: response.stream is not async iterable');
+        return;
+    }
+    try {
+        for await (const part of stream) {
+            if (token?.isCancellationRequested) break;
+            try {
+                await onPart(part);
+            } catch (innerErr) {
+                // 個々のパート処理で例外が出てもループ継続
+                console.warn('Error processing stream part:', innerErr);
+            }
+        }
+    } catch (err) {
+        // 全体のストリーム消費でエラーが起きてもハンドルして終了（Invalid stream 等の防止）
+        console.warn('Error consuming stream:', err);
+    }
+}
+// --- 追加ここまで ---
+
 export function registerToolUserChatParticipant(context: vscode.ExtensionContext) {
     // We'll create the chat participant below but declare it here so the handler
     // can update the participant's name at runtime based on the selected model.
@@ -191,13 +220,13 @@ ${compressedSummary}
                             attempt++;
                             const resp = await (model as any).sendRequest(msg, { justification: 'history-summary' } as any, token);
                             let summaryText = '';
-                            for await (const part of resp.stream) {
+                            await consumeStreamSafely((resp as any).stream, (part: any) => {
                                 if (part instanceof vscode.LanguageModelTextPart) {
                                     summaryText += part.value;
                                 } else if ((part as any).value && typeof (part as any).value === 'string') {
                                     summaryText += (part as any).value;
                                 }
-                            }
+                            }, token);
 
                             summaryText = summaryText.trim();
                             if (summaryText) {
@@ -298,17 +327,21 @@ ${compressedSummary}
             const toolCalls: vscode.LanguageModelToolCallPart[] = [];
             let responseStr = '';
 
-            for await (const part of response.stream) {
+            await consumeStreamSafely((response as any).stream, (part: any) => {
                 if (part instanceof vscode.LanguageModelTextPart) {
-                    stream.markdown(part.value);
+                    // チャット UI にストリーム状に出力
+                    try { stream.markdown(part.value); } catch { /* ignore */ }
                     responseStr += part.value;
                 } else if (part instanceof vscode.LanguageModelToolCallPart) {
                     if (part.name === 'cogent_updateFile' || part.name === 'cogent_applyDiff') {
                         hasFileUpdateCall = true;
                     }
                     toolCalls.push(part);
+                } else {
+                    // 未知のパートはログに残して無視
+                    console.debug('Unhandled stream part type:', part);
                 }
-            }
+            }, token);
 
             if (toolCalls.length) {
                 toolCallRounds.push({
