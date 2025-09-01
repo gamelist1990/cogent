@@ -337,8 +337,17 @@ class PromptReferenceElement extends PromptElement<PromptReferenceProps> {
         const value = this.props.ref.value;
         if (value instanceof vscode.Uri) {
             let uri = value;
+            // If the Uri has no scheme and looks like an absolute path (starts with drive or /),
+            // don't join it to the workspace folder. Only treat it as workspace-relative when it's a relative path.
             if (!uri.scheme && this.props.workspaceFolder) {
-                uri = vscode.Uri.file(path.join(this.props.workspaceFolder.uri.fsPath, uri.fsPath));
+                const raw = uri.fsPath || '';
+                const isWindowsDrive = /^[a-zA-Z]:\\/.test(raw) || /^[a-zA-Z]:\//.test(raw);
+                const isAbsolutePath = path.isAbsolute(raw) || isWindowsDrive;
+                if (!isAbsolutePath) {
+                    uri = vscode.Uri.file(path.join(this.props.workspaceFolder.uri.fsPath, uri.fsPath));
+                } else {
+                    uri = vscode.Uri.file(path.normalize(raw));
+                }
             }
             try {
                 const stat = await vscode.workspace.fs.stat(uri);
@@ -388,7 +397,14 @@ class PromptReferenceElement extends PromptElement<PromptReferenceProps> {
         } else if (value instanceof vscode.Location) {
             let uri = value.uri;
             if (!uri.scheme && this.props.workspaceFolder) {
-                uri = vscode.Uri.file(path.join(this.props.workspaceFolder.uri.fsPath, uri.fsPath));
+                const raw = uri.fsPath || '';
+                const isWindowsDrive = /^[a-zA-Z]:\\/.test(raw) || /^[a-zA-Z]:\//.test(raw);
+                const isAbsolutePath = path.isAbsolute(raw) || isWindowsDrive;
+                if (!isAbsolutePath) {
+                    uri = vscode.Uri.file(path.join(this.props.workspaceFolder.uri.fsPath, uri.fsPath));
+                } else {
+                    uri = vscode.Uri.file(path.normalize(raw));
+                }
             }
             const rangeText = (await vscode.workspace.openTextDocument(uri))
                 .getText(value.range);

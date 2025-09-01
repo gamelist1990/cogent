@@ -21,7 +21,15 @@ export class RemoveFileTool implements vscode.LanguageModelTool<IRemoveParams> {
                 throw new Error('Path is required');
             }
 
-            const targetUri = vscode.Uri.file(path.join(workspaceFolder.uri.fsPath, options.input.path));
+            const rawPath = (options.input.path ?? '').toString().trim();
+            const isWindowsDrive = /^[a-zA-Z]:\\/.test(rawPath) || /^[a-zA-Z]:\//.test(rawPath);
+            const isAbsolutePath = path.isAbsolute(rawPath) || isWindowsDrive;
+
+            const targetFsPath = isAbsolutePath
+                ? path.normalize(rawPath)
+                : path.normalize(path.join(workspaceFolder.uri.fsPath, rawPath));
+
+            const targetUri = vscode.Uri.file(targetFsPath);
 
             // Confirm existence
             try {
