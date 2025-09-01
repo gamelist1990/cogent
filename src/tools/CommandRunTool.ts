@@ -7,7 +7,6 @@ interface ICommandParams {
     useLastCommand?: boolean;
     useSelection?: boolean; // run selected text from the active editor
     terminalName?: string;
-    captureOutput?: boolean; // if true, run in a pseudoterminal and capture output
 }
 
 export class CommandRunTool implements vscode.LanguageModelTool<ICommandParams> {
@@ -50,103 +49,79 @@ export class CommandRunTool implements vscode.LanguageModelTool<ICommandParams> 
             // Save last command
             CommandRunTool.lastCommand = command;
 
-            // Send command to a visible VS Code terminal so the user can see logs.
-            // Avoid sending an explicit `cd` to an existing terminal to prevent
-            // accidental concatenation of prior prompt + cd + new command.
+            // Run the command in a pseudoterminal and stream stdout/stderr to
+            // a visible terminal while buffering the data for the AI. This is
+            // the single, consistent execution mode.
             const terminalName = options.input.terminalName || 'Cogent Runner';
-            let term = vscode.window.terminals.find(t => t.name === terminalName);
             const workspaceCwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 
-            // If we need to create a new terminal, prefer passing cwd to the
-            // terminal creation options so the terminal starts in the workspace.
-            if (!term) {
-                if (workspaceCwd) {
-                    term = vscode.window.createTerminal({ name: terminalName, cwd: workspaceCwd });
-                } else {
-                    term = vscode.window.createTerminal({ name: terminalName });
-                }
-            }
+            let buffer = '';
+            let child: ChildProcess | undefined;
 
-            // Show the terminal but do NOT send an explicit `cd` to avoid the
-            // case where the terminal prompt and a sent `cd` combine into one line.
-            term.show(true);
+            let resolveExit: ((code: number) => void) | undefined;
+            const exitPromise = new Promise<number>((resolve) => { resolveExit = resolve; });
 
-            // If captureOutput is requested, run the command in a pseudoterminal
-            // so the extension can capture stdout/stderr directly. This keeps
-            // output separate from any user-visible terminal and avoids relying
-            // on APIs that aren't available in all VS Code versions.
-            if (options.input.captureOutput) {
-                let buffer = '';
-                let child: ChildProcess | undefined;
+            const emitter = new vscode.EventEmitter<string>();
+            const pty: vscode.Pseudoterminal = {
+                onDidWrite: emitter.event,
+                open: () => {
+                    try {
+                        child = spawn(command, { shell: true, cwd: workspaceCwd });
 
-                const emitter = new vscode.EventEmitter<string>();
-                const pty: vscode.Pseudoterminal = {
-                    onDidWrite: emitter.event,
-                    open: () => {
-                        try {
-                            child = spawn(command, { shell: true, cwd: workspaceCwd });
-                            child.stdout?.on('data', (d: Buffer) => {
-                                const s = d.toString();
-                                buffer += s;
-                                emitter.fire(s);
-                            });
-                            child.stderr?.on('data', (d: Buffer) => {
-                                const s = d.toString();
-                                buffer += s;
-                                emitter.fire(s);
-                            });
-                            child.on('close', () => {
-                                emitter.fire('\n');
-                                try { emitter.dispose(); } catch {}
-                            });
-                        } catch (err) {
-                            emitter.fire(`Error spawning process: ${(err as Error).message}`);
+                        child.stdout?.on('data', (d: Buffer) => {
+                            const s = d.toString();
+                            buffer += s;
+                            emitter.fire(s);
+                        });
+                        child.stderr?.on('data', (d: Buffer) => {
+                            const s = d.toString();
+                            buffer += s;
+                            emitter.fire(s);
+                        });
+
+                        child.on('close', (code) => {
+                            try { emitter.fire('\r\n'); } catch {}
                             try { emitter.dispose(); } catch {}
-                        }
-                    },
-                    close: () => {
-                        try { child?.kill(); } catch {}
+                            resolveExit?.(typeof code === 'number' ? code : 0);
+                        });
+                    } catch (err) {
+                        const msg = `Error spawning process: ${(err as Error).message}`;
+                        try { emitter.fire(msg + '\r\n'); } catch {}
+                        try { emitter.dispose(); } catch {}
+                        resolveExit?.(-1);
                     }
-                };
-
-                const captureTerm = vscode.window.createTerminal({ name: `${terminalName} (capture)`, pty });
-                captureTerm.show(true);
-
-                logger.info(`Spawned capture terminal '${terminalName} (capture)' for command: ${command}`);
-
-                // Wait for process to finish or timeout
-                const captured = await new Promise<string>((resolve) => {
-                    const timeout = setTimeout(() => resolve(buffer), 15000);
-                    // Poll for child exit by checking the buffer change; when
-                    // the child process ends we'll clear the timeout in a
-                    // microtask. Simpler than wiring events here.
-                    const check = setInterval(() => {
-                        // if terminal emitter disposed, assume finished
-                        // There's no direct event here to know; rely on timeout
-                    }, 200);
-                    // Resolve when timeout fires
-                    outputPromiseLike: void 0;
-                    // fallback: resolve after timeout
-                });
-
-                if (buffer) {
-                    return new vscode.LanguageModelToolResult([
-                        new vscode.LanguageModelTextPart(`Captured terminal output:\n${buffer}`)
-                    ]);
+                },
+                close: () => {
+                    try { child?.kill(); } catch {}
                 }
+            };
 
+            const streamTerm = vscode.window.createTerminal({ name: `${terminalName} (stream)`, pty });
+            streamTerm.show(true);
+
+            logger.info(`Started streaming terminal '${terminalName} (stream)' for command: ${command}`);
+
+            // Wait for process to finish or timeout
+            const exitCode = await Promise.race([
+                exitPromise,
+                new Promise<number>((resolve) => setTimeout(() => {
+                    try { child?.kill(); } catch {}
+                    resolve(-1);
+                }, 15000))
+            ]);
+
+            try { streamTerm.dispose(); } catch {}
+
+            logger.info(`Streaming process finished with code ${exitCode} for command: ${command}`);
+
+            if (buffer) {
                 return new vscode.LanguageModelToolResult([
-                    new vscode.LanguageModelTextPart(`Command sent to capture terminal '${terminalName} (capture)'. Output will appear in that terminal.`)
+                    new vscode.LanguageModelTextPart(`Captured output:\n${buffer}`)
                 ]);
             }
 
-            // Non-capture path: just send the command to the terminal
-            term.sendText(command, true);
-
-            logger.info(`Sent command to terminal '${terminalName}': ${command}`);
-
             return new vscode.LanguageModelToolResult([
-                new vscode.LanguageModelTextPart(`Command sent to terminal '${terminalName}'. Output will appear in that terminal.`)
+                new vscode.LanguageModelTextPart(`Command finished with code ${exitCode}, no output was captured.`)
             ]);
         } catch (err: unknown) {
             return new vscode.LanguageModelToolResult([
