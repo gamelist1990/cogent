@@ -8,9 +8,13 @@ export function activate(context: vscode.ExtensionContext) {
     const logger = Logger.getInstance();
     logger.info('Cogent extension is now active!');
 
-    // Register only the file/remove tool — other operations should use Copilot built-in tools by default.
+    // Register file tools — other operations should use Copilot built-in tools by default.
     context.subscriptions.push(
         vscode.lm.registerTool('cogent_removeFile', new RemoveFileTool())
+    );
+    // Create file tool for safe creation of new files via the language model.
+    context.subscriptions.push(
+        vscode.lm.registerTool('cogent_createFile', new (require('./tools').CreateFileTool)())
     );
 
 

@@ -76,6 +76,8 @@ export function buildPrompt(opts: BuildPromptOptions): string {
 		'',
 		'cogent_removeFile (RemoveFileTool)\n  - 入力: { path: string, recursive?: boolean }\n  - 振る舞い: workspace.fs.delete を呼び、ファイル/ディレクトリを削除する。復元はできないため慎重に。',
 		'',
+		'cogent_createFile (CreateFileTool)\n  - 入力: { path: string, content?: string, overwrite?: boolean }\n  - 振る舞い: workspace.fs.writeFile を呼び、必要に応じて親ディレクトリを作成する。既存ファイルがある場合は overwrite=true を明示すること。',
+		'',
 		'',
 		requestPrompt ? `## ユーザー送信プロンプト\n${requestPrompt}` : ''
 		].filter(Boolean).join('\n');

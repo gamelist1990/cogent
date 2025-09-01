@@ -1,2 +1,4 @@
 import { RemoveFileTool } from './tools/RemoveFileTool';
-export { RemoveFileTool };
+import { CreateFileTool } from './tools/CreateFileTool';
+
+export { RemoveFileTool, CreateFileTool };

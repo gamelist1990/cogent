@@ -56,17 +56,7 @@ export function registerToolUserChatParticipant(context: vscode.ExtensionContext
         }
 
 
-        // Update the chat participant's displayed name to include the chosen model
-        try {
-            const modelLabel = getModelDisplayName(model);
-            if (toolUser) {
-                // Assign to .name property which corresponds to chatParticipants.name
-                // Some API surfaces may accept displayName; we set name to match package.json
-                (toolUser as any).name = `cogent (${modelLabel})`;
-            }
-        } catch (e) {
-            // non-fatal; continue without changing name
-        }
+
 
         if (!model) {
             // Nothing we can do without a model; inform the user and stop handling this request.
@@ -124,10 +114,9 @@ export function registerToolUserChatParticipant(context: vscode.ExtensionContext
             }
         });
 
-        const toolReferences = [...request.toolReferences];
-        const accumulatedToolResults: Record<string, vscode.LanguageModelToolResult> = {};
-        const toolCallRounds: ToolCallRound[] = [];
-        let hasFileUpdateCall = false;
+    const toolReferences = [...request.toolReferences];
+    const accumulatedToolResults: Record<string, vscode.LanguageModelToolResult> = {};
+    const toolCallRounds: ToolCallRound[] = [];
 
         const runWithTools = async (): Promise<void> => {
             const requestedTool = toolReferences.shift();
@@ -162,9 +151,6 @@ export function registerToolUserChatParticipant(context: vscode.ExtensionContext
                     stream.markdown(part.value);
                     responseStr += part.value;
                 } else if (part instanceof vscode.LanguageModelToolCallPart) {
-                    if (part.name === 'cogent_updateFile' || part.name === 'cogent_applyDiff') {
-                        hasFileUpdateCall = true;
-                    }
                     toolCalls.push(part);
                 }
             }
@@ -214,11 +200,6 @@ export function registerToolUserChatParticipant(context: vscode.ExtensionContext
     toolUser = vscode.chat.createChatParticipant('cogent.assistant', handler);
     toolUser.iconPath = vscode.Uri.joinPath(context.extensionUri, 'assets/cogent.jpeg');
 
-    // Register the apply changes command
-    const applyChangesCommand = vscode.commands.registerCommand('cogent.applyChanges', async () => {
-        await vscode.workspace.saveAll();
-        vscode.window.showInformationMessage('All changes have been saved');
-    });
-
-    context.subscriptions.push(toolUser, applyChangesCommand);
+   
+    context.subscriptions.push(toolUser);
 }
