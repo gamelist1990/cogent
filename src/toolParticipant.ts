@@ -23,13 +23,32 @@ export function isTsxToolUserMetadata(obj: unknown): obj is TsxToolUserMetadata 
 
 export function registerToolUserChatParticipant(context: vscode.ExtensionContext) {
     const handler: vscode.ChatRequestHandler = async (request: vscode.ChatRequest, chatContext: vscode.ChatContext, stream: vscode.ChatResponseStream, token: vscode.CancellationToken) => {
-        const MODEL_SELECTOR: vscode.LanguageModelChatSelector = { vendor: 'copilot', family: 'claude-3.5-sonnet' };
-        let [model] = await vscode.lm.selectChatModels(MODEL_SELECTOR);
-        if (!model) {
-            [model] = await vscode.lm.selectChatModels({ vendor: 'copilot', family: 'gpt-4o' });
+        // Prefer a model the user has already selected on the chat/request/context if present.
+        // There isn't a single guaranteed property name across vscode API versions, so try a few
+        // likely locations using `any` and fall back to prompting the user as before.
+    let model: vscode.LanguageModelChat | undefined;
+
+        const candidateFromRequest = (request as any)?.model || (request as any)?.selectedModel || (request as any)?.selectedChatModel;
+        const candidateFromContext = (chatContext as any)?.selectedModel || (chatContext as any)?.model;
+
+        if (candidateFromRequest) {
+            model = candidateFromRequest as vscode.LanguageModelChat;
+        } else if (candidateFromContext) {
+            model = candidateFromContext as vscode.LanguageModelChat;
+        } else {
+            const MODEL_SELECTOR: vscode.LanguageModelChatSelector = { vendor: 'copilot', family: 'claude-3.5-sonnet' };
+            let models = await vscode.lm.selectChatModels(MODEL_SELECTOR);
+            model = models[0];
             if (!model) {
-                stream.markdown("No language model available.")
+                models = await vscode.lm.selectChatModels({ vendor: 'copilot', family: 'gpt-4o' });
+                model = models[0];
             }
+        }
+
+        if (!model) {
+            // Nothing we can do without a model; inform the user and stop handling this request.
+            stream.markdown("No language model available.");
+            return;
         }
 
         const useFullWorkspace = vscode.workspace.getConfiguration('cogent').get('use_full_workspace', false);
