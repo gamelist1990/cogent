@@ -321,6 +321,41 @@ export class ApplyDiffTool implements vscode.LanguageModelTool<ApplyDiffInput> {
                 options.input.end_line
             );
 
+            // Before showing/applying, try to extract a candidate symbol from the diff for usage lookup
+            try {
+                const searchMatch = options.input.diff.match(/<<<<<<< SEARCH\n([\s\S]*?)\n?=======/);
+                const searchContent = searchMatch ? searchMatch[1] : options.input.diff;
+                const candidateSymbol = (function extract(content: string): string | undefined {
+                    if (!content) return undefined;
+                    const fn = content.match(/(?:function|def)\s+([A-Za-z_][\w]*)/);
+                    if (fn) return fn[1];
+                    const cl = content.match(/class\s+([A-Za-z_][\w]*)/);
+                    if (cl) return cl[1];
+                    const id = content.match(/\b([A-Za-z_][\w]{2,})\b/);
+                    return id ? id[1] : undefined;
+                })(searchContent);
+
+                if (candidateSymbol) {
+                    try {
+                        const token = new vscode.CancellationTokenSource().token;
+                        const res = await vscode.lm.invokeTool('cogent_getVscodeApi', { input: { action: 'list_code_usages', symbol: { name: candidateSymbol } }, toolInvocationToken: undefined }, token);
+                        const anyRes: any = res;
+                        const usages = (anyRes?.parts ?? []).map((p: any) => p?.text ?? p?.value ?? '').join('\n') ?? '';
+                        if (usages) {
+                            // Prepend usage info to response
+                            const infoPart = `Detected usages for symbol '${candidateSymbol}':\n${usages}\n\n`;
+                            // If result is success, attach to content response later by storing in a variable
+                            // We'll include it in the response after diff view update
+                            (result as any)._usageInfo = infoPart;
+                        }
+                    } catch {
+                        // ignore
+                    }
+                }
+            } catch {
+                // ignore symbol extraction errors
+            }
+
             if (!result.success) {
                 throw new Error(result.error);
             }

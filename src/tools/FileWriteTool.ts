@@ -33,12 +33,32 @@ export class FileWriteTool implements vscode.LanguageModelTool<IFileOperationPar
                 ]);
             } catch {
                 // File doesn't exist, proceed with creation using workspace.fs
+                const content = options.input.content || '';
+
+                // Try to extract a candidate symbol from content for usage lookup
+                const candidate = extractCandidateSymbol(content);
+                let usagesText = '';
+                if (candidate) {
+                    try {
+                        const token = new vscode.CancellationTokenSource().token;
+                        const res = await vscode.lm.invokeTool('cogent_getVscodeApi', { input: { action: 'list_code_usages', symbol: { name: candidate } }, toolInvocationToken: undefined }, token);
+                        const anyRes: any = res;
+                        usagesText = (anyRes?.parts ?? []).map((p: any) => p?.text ?? p?.value ?? '').join('\n') ?? '';
+                    } catch {
+                        // ignore lookup errors
+                    }
+                }
+
                 const encoder = new TextEncoder();
-                const data = encoder.encode(options.input.content || '');
+                const data = encoder.encode(content);
                 await vscode.workspace.fs.writeFile(fileUri, data);
-                return new vscode.LanguageModelToolResult([
-                    new vscode.LanguageModelTextPart(`File created successfully at ${options.input.path}`)
-                ]);
+
+                const parts = [new vscode.LanguageModelTextPart(`File created successfully at ${options.input.path}`)];
+                if (usagesText) {
+                    parts.push(new vscode.LanguageModelTextPart(`Detected symbol '${candidate}' usages:\n${usagesText}`));
+                }
+
+                return new vscode.LanguageModelToolResult(parts);
             }
         } catch (err: unknown) {
             return new vscode.LanguageModelToolResult([
@@ -67,4 +87,17 @@ export class FileWriteTool implements vscode.LanguageModelTool<IFileOperationPar
             }
         };
     }
+}
+
+// Heuristic to pick a candidate symbol name from provided content
+function extractCandidateSymbol(content: string): string | undefined {
+    if (!content) return undefined;
+    // Try common patterns: function, class, def
+    const fnMatch = content.match(/(?:function|def)\s+([A-Za-z_][\w]*)/);
+    if (fnMatch) return fnMatch[1];
+    const classMatch = content.match(/class\s+([A-Za-z_][\w]*)/);
+    if (classMatch) return classMatch[1];
+    // Fallback: first identifier with length >=3
+    const idMatch = content.match(/\b([A-Za-z_][\w]{2,})\b/);
+    return idMatch ? idMatch[1] : undefined;
 }
