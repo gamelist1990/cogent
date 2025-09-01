@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { registerToolUserChatParticipant } from './toolParticipant';
-import { FileReadTool, FileWriteTool, FileUpdateTool, CommandRunTool, ApplyDiffTool, RemoveFileTool, GetChangedFilesTool, WebSearchTool, FetchWebpageTool, GetVscodeApiTool, ThinkTool, FormatUserInputTool } from './tools';
+import { FileReadTool, FileWriteTool, FileUpdateTool, CommandRunTool, ApplyDiffTool, RemoveFileTool, GetChangedFilesTool, WebSearchTool, FetchWebpageTool, GetVscodeApiTool, ThinkTool } from './tools';
 import { DiffView } from './components/DiffView';
 import { Logger } from './components/Logger';
 
@@ -8,13 +8,12 @@ export function activate(context: vscode.ExtensionContext) {
     const logger = Logger.getInstance();
     logger.info('Cogent extension is now active!');
 
-    // Register tools
+        // Register tools
     context.subscriptions.push(
         vscode.lm.registerTool('cogent_readFile', new FileReadTool()),
         vscode.lm.registerTool('cogent_writeFile', new FileWriteTool()),
         vscode.lm.registerTool('cogent_updateFile', new FileUpdateTool()),
         vscode.lm.registerTool('cogent_runCommand', new CommandRunTool()),
-        vscode.lm.registerTool('cogent_formatUserInput', new FormatUserInputTool()),
         vscode.lm.registerTool('cogent_applyDiff', new ApplyDiffTool()),
         vscode.lm.registerTool('cogent_removeFile', new RemoveFileTool()),
         vscode.lm.registerTool('cogent_getChangedFiles', new GetChangedFilesTool()),
@@ -24,59 +23,7 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.lm.registerTool('cogent_think', new ThinkTool())
     );
 
-    // Command wrapper so the UI can trigger formatting via a command link
-    const disposableFormat = vscode.commands.registerCommand('cogent.formatUserInput', async (initialText?: string) => {
-        try {
-            // If the command was invoked without an argument (e.g. via a command link), show an input box
-            let text: string | undefined = initialText;
-            if (!text) {
-                const input = await vscode.window.showInputBox({
-                    prompt: 'Enter the user prompt to format (will be copied to clipboard after formatting)',
-                    placeHolder: 'Type the prompt you would send to Cogent (e.g. "リンゴを作る処理を実装してください...")'
-                });
-                if (input === undefined) {
-                    // user cancelled
-                    return;
-                }
-                text = input;
-            }
 
-            const token = new vscode.CancellationTokenSource().token;
-            const result = await vscode.lm.invokeTool('cogent_formatUserInput', { input: { text, style: 'polish' }, toolInvocationToken: undefined }, token);
-            const anyRes: any = result;
-            const formatted = (anyRes?.parts ?? []).map((p: any) => p?.text ?? p?.value ?? '').join('') ?? '';
-            if (!formatted) {
-                void vscode.window.showInformationMessage('Formatting returned empty result');
-                return;
-            }
-            await vscode.env.clipboard.writeText(formatted);
-            void vscode.window.showInformationMessage('Formatted text copied to clipboard. Paste into the chat input to use it.');
-        } catch (err) {
-            void vscode.window.showErrorMessage(`Formatting failed: ${(err as Error).message}`);
-        }
-    });
-    context.subscriptions.push(disposableFormat);
-
-    // New command: show input box and forward to the existing formatter (copies result to clipboard)
-    const disposableSend = vscode.commands.registerCommand('cogent.send', async () => {
-        const input = await vscode.window.showInputBox({
-            prompt: 'Enter the user prompt to format (will be copied to clipboard after formatting)',
-            placeHolder: 'Type the prompt you would send to Cogent (e.g. "リンゴを作る処理を実装してください...")'
-        });
-        if (input === undefined) {
-            // user cancelled
-            return;
-        }
-
-        try {
-            // Delegate to the existing command which formats and copies to clipboard
-            await vscode.commands.executeCommand('cogent.formatUserInput', input);
-            void vscode.window.showInformationMessage('Prompt formatted and copied to clipboard.');
-        } catch (err) {
-            void vscode.window.showErrorMessage(`Send failed: ${(err as Error).message}`);
-        }
-    });
-    context.subscriptions.push(disposableSend);
 
     // Register the tool participant
     registerToolUserChatParticipant(context);

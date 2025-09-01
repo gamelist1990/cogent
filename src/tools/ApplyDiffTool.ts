@@ -283,6 +283,72 @@ export class ApplyDiffTool implements vscode.LanguageModelTool<ApplyDiffInput> {
             .join('\n');
     }
 
+    private async safeApplyDiff(filePath: string, newContent: string): Promise<void> {
+        const uri = vscode.Uri.file(filePath);
+        const logger = Logger.getInstance();
+
+        try {
+            // Open the document if not already open
+            let document = vscode.workspace.textDocuments.find(doc => doc.uri.toString() === uri.toString());
+            if (!document) {
+                document = await vscode.workspace.openTextDocument(uri);
+            }
+
+            // Backup current content
+            const backupContent = document.getText();
+
+            // Listen for changes to verify the edit
+            let changeDetected = false;
+            const changeListener = vscode.workspace.onDidChangeTextDocument(event => {
+                if (event.document.uri.toString() === uri.toString()) {
+                    changeDetected = true;
+                }
+            });
+
+            // Apply the edit
+            const edit = new vscode.WorkspaceEdit();
+            const fullRange = new vscode.Range(0, 0, document.lineCount, 0);
+            edit.replace(uri, fullRange, newContent);
+
+            const success = await vscode.workspace.applyEdit(edit);
+
+            if (!success) {
+                logger.warn(`Failed to apply edit to ${filePath}`);
+                throw new Error('Workspace edit failed');
+            }
+
+            // Wait a bit for the change to be detected
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            if (!changeDetected) {
+                logger.warn(`No change detected after applying edit to ${filePath}`);
+                // Restore backup
+                const restoreEdit = new vscode.WorkspaceEdit();
+                restoreEdit.replace(uri, fullRange, backupContent);
+                await vscode.workspace.applyEdit(restoreEdit);
+                throw new Error('Change not applied successfully');
+            }
+
+            // Verify the content
+            const updatedDocument = vscode.workspace.textDocuments.find(doc => doc.uri.toString() === uri.toString());
+            if (updatedDocument && updatedDocument.getText() !== newContent) {
+                logger.warn(`Content mismatch after applying edit to ${filePath}`);
+                // Restore backup
+                const restoreEdit = new vscode.WorkspaceEdit();
+                restoreEdit.replace(uri, fullRange, backupContent);
+                await vscode.workspace.applyEdit(restoreEdit);
+                throw new Error('Content verification failed');
+            }
+
+            changeListener.dispose();
+            logger.info(`Successfully applied diff to ${filePath}`);
+
+        } catch (error) {
+            logger.error(`Error in safeApplyDiff for ${filePath}: ${error}`);
+            throw error;
+        }
+    }
+
     async invoke(
         options: vscode.LanguageModelToolInvocationOptions<ApplyDiffInput>,
         _token: vscode.CancellationToken
@@ -364,7 +430,8 @@ export class ApplyDiffTool implements vscode.LanguageModelTool<ApplyDiffInput> {
             this.diffView = new DiffView(fullPath, baseContent);
             await this.diffView.show();
             
-            await this.diffView.update(result.content, 0);
+            // Apply changes safely using VS Code API
+            await this.safeApplyDiff(fullPath, result.content);
 
             // Get the latest content with unsaved changes
             const unsavedResult = await UnsavedChangesDetector.detectChanges(options.input.path);

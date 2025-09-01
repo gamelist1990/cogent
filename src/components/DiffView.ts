@@ -75,14 +75,71 @@ export class DiffView {
     async update(content: string, _line: number) {
         if (!this.document) return;
 
-        const edit = new vscode.WorkspaceEdit();
-        const fullRange = new vscode.Range(
-            0, 0,
-            this.document.lineCount, 0
-        );
-        
-        edit.replace(this.originalUri, fullRange, content);
-        await vscode.workspace.applyEdit(edit);
+        const logger = Logger.getInstance();
+        const backupContent = this.document.getText();
+
+        try {
+            // Listen for changes to verify the edit
+            let changeDetected = false;
+            const changeListener = vscode.workspace.onDidChangeTextDocument(event => {
+                if (event.document.uri.toString() === this.originalUri.toString()) {
+                    changeDetected = true;
+                }
+            });
+
+            const edit = new vscode.WorkspaceEdit();
+            const fullRange = new vscode.Range(
+                0, 0,
+                this.document.lineCount, 0
+            );
+            
+            edit.replace(this.originalUri, fullRange, content);
+            const success = await vscode.workspace.applyEdit(edit);
+
+            if (!success) {
+                logger.warn(`Failed to apply edit to ${this.originalUri.fsPath}`);
+                throw new Error('Workspace edit failed');
+            }
+
+            // Wait a bit for the change to be detected
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            if (!changeDetected) {
+                logger.warn(`No change detected after applying edit to ${this.originalUri.fsPath}`);
+                // Restore backup
+                const restoreEdit = new vscode.WorkspaceEdit();
+                restoreEdit.replace(this.originalUri, fullRange, backupContent);
+                await vscode.workspace.applyEdit(restoreEdit);
+                throw new Error('Change not applied successfully');
+            }
+
+            // Verify the content
+            const updatedDocument = vscode.workspace.textDocuments.find(doc => doc.uri.toString() === this.originalUri.toString());
+            if (updatedDocument && updatedDocument.getText() !== content) {
+                logger.warn(`Content mismatch after applying edit to ${this.originalUri.fsPath}`);
+                // Restore backup
+                const restoreEdit = new vscode.WorkspaceEdit();
+                restoreEdit.replace(this.originalUri, fullRange, backupContent);
+                await vscode.workspace.applyEdit(restoreEdit);
+                throw new Error('Content verification failed');
+            }
+
+            changeListener.dispose();
+            logger.info(`Successfully applied diff to ${this.originalUri.fsPath}`);
+
+        } catch (error) {
+            logger.error(`Error applying diff to ${this.originalUri.fsPath}: ${error}`);
+            // Try to restore backup
+            try {
+                const restoreEdit = new vscode.WorkspaceEdit();
+                const fullRange = new vscode.Range(0, 0, this.document.lineCount, 0);
+                restoreEdit.replace(this.originalUri, fullRange, backupContent);
+                await vscode.workspace.applyEdit(restoreEdit);
+            } catch (restoreError) {
+                logger.error(`Failed to restore backup: ${restoreError}`);
+            }
+            throw error;
+        }
     }
 
     async close() {

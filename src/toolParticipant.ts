@@ -36,7 +36,7 @@ export function registerToolUserChatParticipant(context: vscode.ExtensionContext
         // Prefer a model the user has already selected on the chat/request/context if present.
         // There isn't a single guaranteed property name across vscode API versions, so try a few
         // likely locations using `any` and fall back to prompting the user as before.
-    let model: vscode.LanguageModelChat | undefined;
+        let model: vscode.LanguageModelChat | undefined;
 
         const candidateFromRequest = (request as any)?.model || (request as any)?.selectedModel || (request as any)?.selectedChatModel;
         const candidateFromContext = (chatContext as any)?.selectedModel || (chatContext as any)?.model;
@@ -46,7 +46,7 @@ export function registerToolUserChatParticipant(context: vscode.ExtensionContext
         } else if (candidateFromContext) {
             model = candidateFromContext as vscode.LanguageModelChat;
         } else {
-            const MODEL_SELECTOR: vscode.LanguageModelChatSelector = { vendor: 'copilot', family: 'gpt-4.お' };
+            const MODEL_SELECTOR: vscode.LanguageModelChatSelector = { vendor: 'copilot', family: 'gpt-4.1' };
             let models = await vscode.lm.selectChatModels(MODEL_SELECTOR);
             model = models[0];
             if (!model) {
@@ -163,12 +163,6 @@ export function registerToolUserChatParticipant(context: vscode.ExtensionContext
 
         await runWithTools();
 
-        if (hasFileUpdateCall) {
-            stream.button({
-                command: 'cogent.applyChanges',
-                title: vscode.l10n.t('Save All Changes')
-            });
-        }
 
         return {
             metadata: {

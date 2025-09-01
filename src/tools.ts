@@ -9,6 +9,4 @@ import { WebSearchTool } from './tools/WebSearchTool';
 import { FetchWebpageTool } from './tools/FetchWebpageTool';
 import { GetVscodeApiTool } from './tools/GetVscodeApiTool';
 import { ThinkTool } from './tools/ThinkTool';
-import { FormatUserInputTool } from './tools/FormatUserInputTool';
-
-export { FileReadTool, FileWriteTool, FileUpdateTool, CommandRunTool, ApplyDiffTool, RemoveFileTool, GetChangedFilesTool, WebSearchTool, FetchWebpageTool, GetVscodeApiTool, ThinkTool, FormatUserInputTool };
+export { FileReadTool, FileWriteTool, FileUpdateTool, CommandRunTool, ApplyDiffTool, RemoveFileTool, GetChangedFilesTool, WebSearchTool, FetchWebpageTool, GetVscodeApiTool, ThinkTool };
