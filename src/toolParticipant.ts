@@ -172,37 +172,54 @@ export function registerToolUserChatParticipant(context: vscode.ExtensionContext
                 // Optionally use the model to further condense the compressedSummary into a short high-quality summary
                 const useModelSummary = vscode.workspace.getConfiguration('cogent').get('use_model_history_summary', true);
                 if (useModelSummary && model) {
-                    try {
-                        // Build a small prompt instructing the model to summarize
-                        const sys = [{ role: 'system', content: 'あなたは会話履歴の要約者です。古い履歴の要点だけを3行以内で簡潔にまとめてください。個人情報を削除し、事実のみを残してください。' } as any];
-                        const user = [{ role: 'user', content: `要約対象:
+                    // Helper sleep for backoff
+                    const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+                    const maxAttempts = 3; // total tries
+                    const baseDelay = 1000; // ms
+                    let attempt = 0;
+                    let lastErr: any = null;
+
+                    const sys = [{ role: 'system', content: 'あなたは会話履歴の要約者です。古い履歴の要点だけを3行以内で簡潔にまとめてください。個人情報を削除し、事実のみを残してください。' } as any];
+                    const user = [{ role: 'user', content: `要約対象:
 ${compressedSummary}
 
 短く日本語で3行以内の要約を出してください。` } as any];
-                        const msg = [...sys, ...user];
+                    const msg = [...sys, ...user];
 
-                        // Fire a lightweight request to the model
-                        const resp = await (model as any).sendRequest(msg, { justification: 'history-summary' } as any, token);
-                        let summaryText = '';
-                        for await (const part of resp.stream) {
-                            // try to read text parts in a defensive way
-                            if (part instanceof vscode.LanguageModelTextPart) {
-                                summaryText += part.value;
-                            } else if ((part as any).value && typeof (part as any).value === 'string') {
-                                summaryText += (part as any).value;
+                    while (attempt < maxAttempts && !token.isCancellationRequested) {
+                        try {
+                            attempt++;
+                            const resp = await (model as any).sendRequest(msg, { justification: 'history-summary' } as any, token);
+                            let summaryText = '';
+                            for await (const part of resp.stream) {
+                                if (part instanceof vscode.LanguageModelTextPart) {
+                                    summaryText += part.value;
+                                } else if ((part as any).value && typeof (part as any).value === 'string') {
+                                    summaryText += (part as any).value;
+                                }
                             }
-                        }
 
-                        summaryText = summaryText.trim();
-                        if (summaryText) {
-                            // crop to safe length
-                            if (summaryText.length > 800) summaryText = summaryText.slice(0, 800) + '…';
-                            return `[SUMMARY of earlier ${older.length} turns]: ${summaryText}`;
+                            summaryText = summaryText.trim();
+                            if (summaryText) {
+                                // crop to safe length
+                                if (summaryText.length > 800) summaryText = summaryText.slice(0, 800) + '…';
+                                return `[SUMMARY of earlier ${older.length} turns]: ${summaryText}`;
+                            }
+
+                            // If model returns empty result, treat as a failure and retry
+                            lastErr = new Error('Empty summary from model');
+                        } catch (err) {
+                            lastErr = err;
+                            // if cancellation requested, break immediately
+                            if (token.isCancellationRequested) break;
+                            // exponential backoff before retrying
+                            const delay = baseDelay * Math.pow(2, attempt - 1);
+                            try { await sleep(delay); } catch { /* ignore */ }
                         }
-                    } catch (err) {
-                        // ignore model errors and fall back to local compressed summary
-                        try { console.debug('history summary model call failed: ' + String(err)); } catch {}
                     }
+
+                    // If all attempts failed, log and fall back to local compressed summary
+                    try { console.debug('Model summary failed after attempts: ' + String(lastErr)); } catch {}
                 }
 
                 // Fallback: return local compressed summary
