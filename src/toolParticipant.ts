@@ -32,32 +32,6 @@ export function registerToolUserChatParticipant(context: vscode.ExtensionContext
         return (anyM.displayName || anyM.name || anyM.id || `${anyM.vendor ?? ''}/${anyM.family ?? ''}`).toString();
     }
 
-    function heuristicsRewrite(text: string): string {
-        if (!text) return '';
-        let r = text;
-        // Collapse whitespace and normalize newlines
-        r = r.replace(/\r\n?/g, '\n').replace(/\n{3,}/g, '\n\n');
-        r = r.replace(/[ \t]+/g, ' ');
-        // Remove repeated punctuation
-        r = r.replace(/([!?.,;:]){2,}/g, '$1');
-        // Expand simple shorthand common in prompts
-        r = r.replace(/\bpls\b/gi, 'please');
-        r = r.replace(/\bthx\b/gi, 'thanks');
-        // Ensure sentence-like capitalization for English-ish text
-        r = r.split('\n').map(line => {
-            const t = line.trim();
-            if (!t) return '';
-            return t.charAt(0).toUpperCase() + t.slice(1);
-        }).join('\n');
-        // Style-specific tweaks
-        r = r.replace(/\s+([,.!?;:])/g, '$1')
-            .replace(/([,.!?;:])([^\s])/g, '$1 $2')
-            .replace(/\s+。/g, '。')
-            .replace(/。([^\s])/g, '。 $1')
-            .replace(/\u3000/g, ' ');
-        return r.trim();
-    }
-
     const handler: vscode.ChatRequestHandler = async (request: vscode.ChatRequest, chatContext: vscode.ChatContext, stream: vscode.ChatResponseStream, token: vscode.CancellationToken) => {
         // Prefer a model the user has already selected on the chat/request/context if present.
         // There isn't a single guaranteed property name across vscode API versions, so try a few
