@@ -88,6 +88,13 @@ async function consumeResponsePartsSafely(response: any,
 // --- 追加ここまで ---
 
 export function registerToolUserChatParticipant(context: vscode.ExtensionContext) {
+    const output = vscode.window.createOutputChannel('Cogent');
+    const log = {
+        debug: (m: any) => { try { output.appendLine('[debug] ' + (typeof m === 'string' ? m : JSON.stringify(m))); } catch { }; try { console.debug(m); } catch { } },
+        info: (m: any) => { try { output.appendLine('[info] ' + (typeof m === 'string' ? m : JSON.stringify(m))); } catch { }; try { console.log(m); } catch { } },
+        warn: (m: any) => { try { output.appendLine('[warn] ' + (typeof m === 'string' ? m : JSON.stringify(m))); } catch { }; try { console.warn(m); } catch { } },
+        error: (m: any) => { try { output.appendLine('[error] ' + (typeof m === 'string' ? m : JSON.stringify(m))); } catch { }; try { console.error(m); } catch { } }
+    };
     // We'll create the chat participant below but declare it here so the handler
     // can update the participant's name at runtime based on the selected model.
     let toolUser: vscode.ChatParticipant | undefined;
@@ -192,14 +199,14 @@ export function registerToolUserChatParticipant(context: vscode.ExtensionContext
                                         if (r?.value?.fsPath) return String(r.value.fsPath);
                                         if (r?.value?.uri && r.value.uri.fsPath) return String(r.value.uri.fsPath);
                                         if (typeof r === 'string') return r;
-                                    } catch {}
+                                    } catch { }
                                     return '';
                                 })
                                 .filter(Boolean)
                                 .join(' ');
                             if (text) return `Assistant: ${text}`;
                         }
-                    } catch {}
+                    } catch { }
                     return '';
                 };
 
@@ -246,7 +253,8 @@ export function registerToolUserChatParticipant(context: vscode.ExtensionContext
                     let lastErr: any = null;
 
                     const sys = [{ role: 'system', content: 'あなたは会話履歴の要約者です。古い履歴の要点だけを3行以内で簡潔にまとめてください。個人情報を削除し、事実のみを残してください。' } as any];
-                    const user = [{ role: 'user', content: `要約対象:
+                    const user = [{
+                        role: 'user', content: `要約対象:
 ${compressedSummary}
 
 短く日本語で3行以内の要約を出してください。` } as any];
@@ -275,6 +283,8 @@ ${compressedSummary}
                             // If model returns empty result, treat as a failure and retry
                             lastErr = new Error('Empty summary from model');
                         } catch (err) {
+                            // Log each failed attempt for diagnostics
+                            try { log.warn({ msg: 'summarizeHistory: model.sendRequest attempt failed', attempt, err }); } catch { }
                             lastErr = err;
                             // if cancellation requested, break immediately
                             if (token.isCancellationRequested) break;
@@ -285,7 +295,7 @@ ${compressedSummary}
                     }
 
                     // If all attempts failed, log and fall back to local compressed summary
-                    try { console.debug('Model summary failed after attempts: ' + String(lastErr)); } catch {}
+                    try { log.debug('Model summary failed after attempts: ' + String(lastErr)); } catch { }
                 }
 
                 // Fallback: return local compressed summary
@@ -360,7 +370,15 @@ ${compressedSummary}
                 options.tools = [...tools];
             }
 
-            const response = await model.sendRequest(messages, options, token);
+            let response: any;
+            try {
+                response = await model.sendRequest(messages, options, token);
+            } catch (err) {
+                // Log detailed error and inform the user via the chat stream
+                try { log.error({ msg: 'runWithTools: model.sendRequest failed', err }); } catch { }
+                try { stream.markdown('Error: failed to get a response from the language model. See extension console for details.'); } catch { }
+                return;
+            }
             const toolCalls: vscode.LanguageModelToolCallPart[] = [];
             let responseStr = '';
 
@@ -376,7 +394,7 @@ ${compressedSummary}
                     toolCalls.push(part);
                 } else {
                     // 未知のパートはログに残して無視
-                    console.debug('Unhandled stream part type:', part);
+                    try { log.debug({ msg: 'Unhandled stream part type', part }); } catch { }
                 }
             }, token);
 

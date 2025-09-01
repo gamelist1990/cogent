@@ -1,463 +1,607 @@
 import {
-    AssistantMessage,
-    BasePromptElementProps,
-    Chunk,
-    PrioritizedList,
-    PromptElement,
-    PromptElementProps,
-    PromptMetadata,
-    PromptPiece,
-    PromptReference,
-    PromptSizing,
-    ToolCall,
-    ToolMessage,
-    UserMessage
-} from '@vscode/prompt-tsx';
-import { ToolResult } from '@vscode/prompt-tsx/dist/base/promptElements';
-import * as vscode from 'vscode';
-import { isTsxToolUserMetadata } from './toolParticipant';
-import { listImportantFiles } from './components/listFiles';
-import * as fs from 'fs/promises';
-import * as path from 'path';
-import { Logger } from './components/Logger';
-import { buildPrompt } from './prompt';
-
+  AssistantMessage,
+  BasePromptElementProps,
+  Chunk,
+  PrioritizedList,
+  PromptElement,
+  PromptElementProps,
+  PromptMetadata,
+  PromptPiece,
+  PromptReference,
+  PromptSizing,
+  ToolCall,
+  ToolMessage,
+  UserMessage,
+} from "@vscode/prompt-tsx";
+import { ToolResult } from "@vscode/prompt-tsx/dist/base/promptElements";
+import * as vscode from "vscode";
+import { isTsxToolUserMetadata } from "./toolParticipant";
+import { listImportantFiles } from "./components/listFiles";
+import * as fs from "fs/promises";
+import * as path from "path";
+import { Logger } from "./components/Logger";
+import { buildPrompt } from "./prompt";
 
 // Runtime-robust type guards to avoid instanceof failures across module boundaries
 function isChatRequestTurnLike(obj: any): obj is vscode.ChatRequestTurn {
-    return !!obj && typeof obj.prompt === 'string' && Array.isArray(obj.references);
+  return (
+    !!obj && typeof obj.prompt === "string" && Array.isArray(obj.references)
+  );
 }
 
 function isChatResponseTurnLike(obj: any): obj is vscode.ChatResponseTurn {
-    return !!obj && Array.isArray(obj.response) && !!obj.result;
+  return !!obj && Array.isArray(obj.response) && !!obj.result;
 }
 
 function isMarkdownPartLike(part: any): boolean {
-    return !!part && part.value && typeof part.value.value === 'string';
+  return !!part && part.value && typeof part.value.value === "string";
 }
 
 function isAnchorPartLike(part: any): boolean {
-    return !!part && part.value && (part.value.fsPath !== undefined || (part.value.uri && part.value.uri.fsPath !== undefined));
+  return (
+    !!part &&
+    part.value &&
+    (part.value.fsPath !== undefined ||
+      (part.value.uri && part.value.uri.fsPath !== undefined))
+  );
 }
 
 function isUriLike(value: any): value is vscode.Uri {
-    return !!value && typeof value.fsPath === 'string';
+  return !!value && typeof value.fsPath === "string";
 }
 
 function isLocationLike(value: any): value is vscode.Location {
-    return !!value && value.uri !== undefined && value.range !== undefined;
+  return !!value && value.uri !== undefined && value.range !== undefined;
 }
 
 export interface ToolCallRound {
-    response: string;
-    toolCalls: vscode.LanguageModelToolCallPart[];
+  response: string;
+  toolCalls: vscode.LanguageModelToolCallPart[];
 }
 
 export interface ToolUserProps extends BasePromptElementProps {
-    request: vscode.ChatRequest;
-    context: vscode.ChatContext;
-    toolCallRounds: ToolCallRound[];
-    toolCallResults: Record<string, vscode.LanguageModelToolResult>;
-    processedPrompt?: string;
+  request: vscode.ChatRequest;
+  context: vscode.ChatContext;
+  toolCallRounds: ToolCallRound[];
+  toolCallResults: Record<string, vscode.LanguageModelToolResult>;
+  processedPrompt?: string;
 }
 
 export class ToolUserPrompt extends PromptElement<ToolUserProps, void> {
-    private async getCustomInstructions(): Promise<string> {
-        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-        if (!workspaceFolder) {
-            return '';
-        }
-
-        try {
-            const rulesPath = path.join(workspaceFolder.uri.fsPath, '.cogentrules');
-            const content = await fs.readFile(rulesPath, 'utf-8');
-            return content.trim();
-        } catch (error) {
-            // File doesn't exist or can't be read, return empty string
-            return '';
-        }
+  private async getCustomInstructions(): Promise<string> {
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+    if (!workspaceFolder) {
+      return "";
     }
 
-    private getProjectStructure() {
-        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-        if (!workspaceFolder) {
-            return { structure: 'No workspace folder found', contents: {} };
-        }
-        return listImportantFiles(workspaceFolder.uri.fsPath);
+    try {
+      const rulesPath = path.join(workspaceFolder.uri.fsPath, ".cogentrules");
+      const content = await fs.readFile(rulesPath, "utf-8");
+      return content.trim();
+    } catch (error) {
+      // File doesn't exist or can't be read, return empty string
+      return "";
     }
+  }
 
-    private getOSLevel(): string {
-        return process.platform === 'win32' 
-            ? 'Windows' 
-            : process.platform === 'darwin' 
-                ? 'macOS' 
-                : 'Linux';
+  private getProjectStructure() {
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+    if (!workspaceFolder) {
+      return { structure: "No workspace folder found", contents: {} };
     }
+    return listImportantFiles(workspaceFolder.uri.fsPath);
+  }
 
-    private getShellType(): string {
-        return process.platform === 'win32' 
-            ? 'PowerShell' 
-            : process.platform === 'darwin'
-                ? 'zsh'
-                : 'bash';
-    }
+  private getOSLevel(): string {
+    return process.platform === "win32"
+      ? "Windows"
+      : process.platform === "darwin"
+      ? "macOS"
+      : "Linux";
+  }
 
-    private addLineNumbers(content: string, startLine: number = 1): string {
-        const lines = content.split('\n');
-        const maxLineNumberWidth = String(startLine + lines.length - 1).length;
-        return lines
-            .map((line, index) => {
-                const lineNumber = String(startLine + index).padStart(maxLineNumberWidth, ' ');
-                return `${lineNumber} | ${line}`;
-            })
-            .join('\n');
-    }
+  private getShellType(): string {
+    return process.platform === "win32"
+      ? "PowerShell"
+      : process.platform === "darwin"
+      ? "zsh"
+      : "bash";
+  }
 
-    async render(_state: void, _sizing: PromptSizing) {
-        const logger = Logger.getInstance();
-        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-        const { structure, contents } = this.getProjectStructure();
-        logger.debug(`Project file structure:\n ${structure}`);
-        const useFullWorkspace = vscode.workspace.getConfiguration('cogent').get('use_full_workspace', true);
-        const customInstructions = await this.getCustomInstructions();
-        const osLevel = this.getOSLevel();
-        const shellType = this.getShellType();
-        
-        const fileContentsSection = useFullWorkspace
-            ? Object.entries(contents)
-                .map(([filePath, content]) => {
-                    return `\n${'='.repeat(80)}\n📝 File: ${filePath}\n${'='.repeat(80)}\n${this.addLineNumbers(content)}`;
-                })
-                .join('\n')
-            : '';
-
-
-        const promptText = buildPrompt({
-            structure,
-            fileContentsSection,
-            customInstructions,
-            osLevel,
-            shellType,
-            useFullWorkspace,
-            requestPrompt: this.props.processedPrompt || this.props.request.prompt
-        });
-
-        return (
-            <>
-                <UserMessage>{promptText}</UserMessage>
-                <History context={this.props.context} priority={10} />
-                <PromptReferences
-                    references={this.props.request.references}
-                    workspaceFolder={workspaceFolder}
-                />
-                <UserMessage>
-                    {this.props.processedPrompt || this.props.request.prompt}
-                </UserMessage>
-                <ToolCalls
-                    toolCallRounds={this.props.toolCallRounds}
-                    toolInvocationToken={this.props.request.toolInvocationToken}
-                    toolCallResults={this.props.toolCallResults} />
-            </>
+  private addLineNumbers(content: string, startLine: number = 1): string {
+    const lines = content.split("\n");
+    const maxLineNumberWidth = String(startLine + lines.length - 1).length;
+    return lines
+      .map((line, index) => {
+        const lineNumber = String(startLine + index).padStart(
+          maxLineNumberWidth,
+          " "
         );
-    }
+        return `${lineNumber} | ${line}`;
+      })
+      .join("\n");
+  }
+
+  async render(_state: void, _sizing: PromptSizing) {
+    const logger = Logger.getInstance();
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+    const { structure, contents } = this.getProjectStructure();
+    logger.debug(`Project file structure:\n ${structure}`);
+    const useFullWorkspace = vscode.workspace
+      .getConfiguration("cogent")
+      .get("use_full_workspace", true);
+    const customInstructions = await this.getCustomInstructions();
+    const osLevel = this.getOSLevel();
+    const shellType = this.getShellType();
+
+    const fileContentsSection = useFullWorkspace
+      ? Object.entries(contents)
+          .map(([filePath, content]) => {
+            return `\n${"=".repeat(80)}\n📝 File: ${filePath}\n${"=".repeat(
+              80
+            )}\n${this.addLineNumbers(content)}`;
+          })
+          .join("\n")
+      : "";
+
+    const promptText = buildPrompt({
+      structure,
+      fileContentsSection,
+      customInstructions,
+      osLevel,
+      shellType,
+      useFullWorkspace,
+      requestPrompt: this.props.processedPrompt || this.props.request.prompt,
+    });
+
+    return (
+      <>
+        <UserMessage>{promptText}</UserMessage>
+        <History context={this.props.context} priority={10} />
+        <PromptReferences
+          references={this.props.request.references}
+          workspaceFolder={workspaceFolder}
+        />
+        <UserMessage>
+          {this.props.processedPrompt || this.props.request.prompt}
+        </UserMessage>
+        <ToolCalls
+          toolCallRounds={this.props.toolCallRounds}
+          toolInvocationToken={this.props.request.toolInvocationToken}
+          toolCallResults={this.props.toolCallResults}
+        />
+      </>
+    );
+  }
 }
 
 interface ToolCallsProps extends BasePromptElementProps {
-    toolCallRounds: ToolCallRound[];
-    toolCallResults: Record<string, vscode.LanguageModelToolResult>;
-    toolInvocationToken: vscode.ChatParticipantToolToken | undefined;
+  toolCallRounds: ToolCallRound[];
+  toolCallResults: Record<string, vscode.LanguageModelToolResult>;
+  toolInvocationToken: vscode.ChatParticipantToolToken | undefined;
 }
 
-const dummyCancellationToken: vscode.CancellationToken = new vscode.CancellationTokenSource().token;
+const dummyCancellationToken: vscode.CancellationToken =
+  new vscode.CancellationTokenSource().token;
 
 class ToolCalls extends PromptElement<ToolCallsProps, void> {
-    async render(_state: void, _sizing: PromptSizing) {
-        if (!this.props.toolCallRounds.length) {
-            return undefined;
-        }
-
-        return <>
-            {this.props.toolCallRounds.map(round => this.renderOneToolCallRound(round))}
-            <UserMessage>Above is the result of calling one or more tools. The user cannot see the results, so you should explain them to the user if referencing them in your answer.</UserMessage>
-        </>;
+  async render(_state: void, _sizing: PromptSizing) {
+    if (!this.props.toolCallRounds.length) {
+      return undefined;
     }
 
-    private renderOneToolCallRound(round: ToolCallRound) {
-        const assistantToolCalls: ToolCall[] = round.toolCalls.map(tc => ({ 
-            type: 'function', 
-            function: { 
-                name: tc.name, 
-                arguments: JSON.stringify(tc.input) 
-            }, 
-            id: tc.callId 
-        }));
-        
-        return (
-            <Chunk>
-                <AssistantMessage toolCalls={assistantToolCalls}>{round.response}</AssistantMessage>
-                {round.toolCalls.map(toolCall =>
-                    <ToolResultElement 
-                        toolCall={toolCall} 
-                        toolInvocationToken={this.props.toolInvocationToken} 
-                        toolCallResult={this.props.toolCallResults[toolCall.callId]} 
-                    />
-                )}
-            </Chunk>
-        );
-    }
+    return (
+      <>
+        {this.props.toolCallRounds.map((round) =>
+          this.renderOneToolCallRound(round)
+        )}
+        <UserMessage>
+          Above is the result of calling one or more tools. The user cannot see
+          the results, so you should explain them to the user if referencing
+          them in your answer.
+        </UserMessage>
+      </>
+    );
+  }
+
+  private renderOneToolCallRound(round: ToolCallRound) {
+    const assistantToolCalls: ToolCall[] = round.toolCalls.map((tc) => ({
+      type: "function",
+      function: {
+        name: tc.name,
+        arguments: JSON.stringify(tc.input),
+      },
+      id: tc.callId,
+    }));
+
+    return (
+      <Chunk>
+        <AssistantMessage toolCalls={assistantToolCalls}>
+          {round.response}
+        </AssistantMessage>
+        {round.toolCalls.map((toolCall) => (
+          <ToolResultElement
+            toolCall={toolCall}
+            toolInvocationToken={this.props.toolInvocationToken}
+            toolCallResult={this.props.toolCallResults[toolCall.callId]}
+          />
+        ))}
+      </Chunk>
+    );
+  }
 }
 
 interface ToolResultElementProps extends BasePromptElementProps {
-    toolCall: vscode.LanguageModelToolCallPart;
-    toolInvocationToken: vscode.ChatParticipantToolToken | undefined;
-    toolCallResult: vscode.LanguageModelToolResult | undefined;
+  toolCall: vscode.LanguageModelToolCallPart;
+  toolInvocationToken: vscode.ChatParticipantToolToken | undefined;
+  toolCallResult: vscode.LanguageModelToolResult | undefined;
 }
 
 class ToolResultElement extends PromptElement<ToolResultElementProps, void> {
-    async render(state: void, sizing: PromptSizing): Promise<PromptPiece | undefined> {
-        const logger = Logger.getInstance();
-        const tool = vscode.lm.tools.find(t => t.name === this.props.toolCall.name);
-        if (!tool) {
-            logger.error(`Tool not found: ${this.props.toolCall.name}`);
-            return <ToolMessage toolCallId={this.props.toolCall.callId}>Tool not found</ToolMessage>;
-        }
+  async render(
+    state: void,
+    sizing: PromptSizing
+  ): Promise<PromptPiece | undefined> {
+    const logger = Logger.getInstance();
+    const tool = vscode.lm.tools.find(
+      (t) => t.name === this.props.toolCall.name
+    );
+    if (!tool) {
+      logger.error(`Tool not found: ${this.props.toolCall.name}`);
+      return (
+        <ToolMessage toolCallId={this.props.toolCall.callId}>
+          Tool not found
+        </ToolMessage>
+      );
+    }
 
-        const tokenizationOptions: vscode.LanguageModelToolTokenizationOptions = {
-            tokenBudget: sizing.tokenBudget,
-            countTokens: async (content: string) => sizing.countTokens(content),
+    const tokenizationOptions: vscode.LanguageModelToolTokenizationOptions = {
+      tokenBudget: sizing.tokenBudget,
+      countTokens: async (content: string) => sizing.countTokens(content),
+    };
+
+    let toolResult: vscode.LanguageModelToolResult | undefined =
+      this.props.toolCallResult;
+    try {
+      if (!toolResult) {
+        toolResult = await vscode.lm.invokeTool(
+          this.props.toolCall.name,
+          {
+            input: this.props.toolCall.input,
+            toolInvocationToken: this.props.toolInvocationToken,
+            tokenizationOptions,
+          },
+          dummyCancellationToken
+        );
+      }
+
+      // Defensive: if toolResult is falsy or doesn't contain expected data, provide a safe message
+      if (!toolResult) {
+        return (
+          <ToolMessage toolCallId={this.props.toolCall.callId}>
+            Tool returned no result
+          </ToolMessage>
+        );
+      }
+
+      // Some tool results may have missing patch text/stream for certain tool types. Wrap rendering in try/catch
+      try {
+        const debugEnabled = vscode.workspace
+          .getConfiguration("cogent")
+          .get("debug", false);
+
+        // Build a safe debug summary (truncate long values)
+        const safeStringify = (v: any, max = 300) => {
+          try {
+            const s = typeof v === "string" ? v : JSON.stringify(v);
+            if (s.length > max) return s.slice(0, max) + "...";
+            return s;
+          } catch (e) {
+            return String(v);
+          }
         };
 
-        let toolResult: vscode.LanguageModelToolResult | undefined = this.props.toolCallResult;
-        try {
-            if (!toolResult) {
-                toolResult = await vscode.lm.invokeTool(
-                    this.props.toolCall.name,
-                    {
-                        input: this.props.toolCall.input,
-                        toolInvocationToken: this.props.toolInvocationToken,
-                        tokenizationOptions
-                    },
-                    dummyCancellationToken
-                );
+        const summarizeResult = (res: any) => {
+          try {
+            if (!res) return "";
+            if (Array.isArray(res.parts)) {
+              return res.parts
+                .map((p: any) => {
+                  if (p.value && p.value.value)
+                    return safeStringify(p.value.value, 400);
+                  if (typeof p === "string") return safeStringify(p, 400);
+                  return safeStringify(p, 200);
+                })
+                .join("\n---\n");
             }
+            return safeStringify(res, 400);
+          } catch (e) {
+            return "Unable to summarize result";
+          }
+        };
 
-            // Defensive: if toolResult is falsy or doesn't contain expected data, provide a safe message
-            if (!toolResult) {
-                return <ToolMessage toolCallId={this.props.toolCall.callId}>Tool returned no result</ToolMessage>;
-            }
+        const debugSummary = debugEnabled ? (
+          <Tag name="debug">
+            Tool: {this.props.toolCall.name}
+            <br />
+            CallId: {this.props.toolCall.callId}
+            <br />
+            Input: {safeStringify(this.props.toolCall.input)}
+            <br />
+            ResultSummary:
+            <br />
+            ```
+            <br />
+            {summarizeResult(toolResult)}
+            <br />
+            ```
+            <br />
+          </Tag>
+        ) : null;
 
-            // Some tool results may have missing patch text/stream for certain tool types. Wrap rendering in try/catch
-            try {
-                return (
-                    <ToolMessage toolCallId={this.props.toolCall.callId}>
-                        <meta value={new ToolResultMetadata(this.props.toolCall.callId, toolResult)}></meta>
-                        <ToolResult data={toolResult} />
-                    </ToolMessage>
-                );
-            } catch (err) {
-                const msg = (err instanceof Error) ? err.message : String(err);
-                Logger.getInstance().error(`Failed to render tool result for ${this.props.toolCall.name}: ${msg}`);
-                return <ToolMessage toolCallId={this.props.toolCall.callId}>Unable to render tool result: {msg}</ToolMessage>;
-            }
-        } catch (invokeErr) {
-            const msg = (invokeErr instanceof Error) ? invokeErr.message : String(invokeErr);
-            Logger.getInstance().error(`Tool invocation failed for ${this.props.toolCall.name}: ${msg}`);
-            return <ToolMessage toolCallId={this.props.toolCall.callId}>Tool invocation failed: {msg}</ToolMessage>;
-        }
+        return (
+          <ToolMessage toolCallId={this.props.toolCall.callId}>
+            <meta
+              value={
+                new ToolResultMetadata(this.props.toolCall.callId, toolResult)
+              }
+            ></meta>
+            <ToolResult data={toolResult} />
+            {debugSummary}
+          </ToolMessage>
+        );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        Logger.getInstance().error(
+          `Failed to render tool result for ${this.props.toolCall.name}: ${msg}`
+        );
+        return (
+          <ToolMessage toolCallId={this.props.toolCall.callId}>
+            Unable to render tool result: {msg}
+          </ToolMessage>
+        );
+      }
+    } catch (invokeErr) {
+      const msg =
+        invokeErr instanceof Error ? invokeErr.message : String(invokeErr);
+      Logger.getInstance().error(
+        `Tool invocation failed for ${this.props.toolCall.name}: ${msg}`
+      );
+      return (
+        <ToolMessage toolCallId={this.props.toolCall.callId}>
+          Tool invocation failed: {msg}
+        </ToolMessage>
+      );
     }
+  }
 }
 
 export class ToolResultMetadata extends PromptMetadata {
-    constructor(
-        public toolCallId: string,
-        public result: vscode.LanguageModelToolResult,
-    ) {
-        super();
-    }
+  constructor(
+    public toolCallId: string,
+    public result: vscode.LanguageModelToolResult
+  ) {
+    super();
+  }
 }
 
 interface HistoryProps extends BasePromptElementProps {
-    priority: number;
-    context: vscode.ChatContext;
+  priority: number;
+  context: vscode.ChatContext;
 }
 
 class History extends PromptElement<HistoryProps, void> {
-    render(_state: void, _sizing: PromptSizing) {
-        return (
-            <PrioritizedList priority={this.props.priority} descending={false}>
-                {this.props.context.history.map((message: any) => {
-                    if (isChatRequestTurnLike(message)) {
-                        return (
-                            <>
-                                <PromptReferences 
-                                    references={message.references} 
-                                    excludeReferences={true} 
-                                />
-                                <UserMessage>{message.prompt}</UserMessage>
-                            </>
-                        );
-                    } else if (isChatResponseTurnLike(message)) {
-                        const metadata = message.result?.metadata;
-                        if (isTsxToolUserMetadata(metadata) && metadata.toolCallsMetadata.toolCallRounds.length > 0) {
-                            return <ToolCalls 
-                                toolCallResults={metadata.toolCallsMetadata.toolCallResults} 
-                                toolCallRounds={metadata.toolCallsMetadata.toolCallRounds} 
-                                toolInvocationToken={undefined} 
-                            />;
-                        }
-                        return <AssistantMessage>{chatResponseToString(message as vscode.ChatResponseTurn)}</AssistantMessage>;
-                    }
-                    return null;
-                })}
-            </PrioritizedList>
-        );
-    }
+  render(_state: void, _sizing: PromptSizing) {
+    // Simplified history renderer: avoid rendering tool results or complex metadata
+    // to prevent streaming/invalid-stream issues. Show last N turns as plain text.
+    const N = 40;
+    const hist = Array.isArray(this.props.context.history)
+      ? this.props.context.history
+      : [];
+    const recent = hist.slice(-N);
+    return (
+      <PrioritizedList priority={this.props.priority} descending={false}>
+        {recent.map((message: any, idx: number) => {
+          try {
+            if (isChatRequestTurnLike(message)) {
+              return <UserMessage>{message.prompt}</UserMessage>;
+            } else if (isChatResponseTurnLike(message)) {
+              // Render response as plain text summary only
+              return (
+                <AssistantMessage>
+                  {chatResponseToString(message as vscode.ChatResponseTurn)}
+                </AssistantMessage>
+              );
+            }
+          } catch (e) {
+            // If anything unexpected occurs, fall back to a safe string
+            const s =
+              typeof message === "string"
+                ? message
+                : JSON.stringify(message || {});
+            return <AssistantMessage>{s}</AssistantMessage>;
+          }
+          return null;
+        })}
+      </PrioritizedList>
+    );
+  }
 }
 
 function chatResponseToString(response: vscode.ChatResponseTurn): string {
-    return (response as any).response
-        .map((r: any) => {
-            try {
-                if (isMarkdownPartLike(r)) {
-                    return String(r.value.value);
-                } else if (isAnchorPartLike(r)) {
-                    if (isUriLike(r.value)) {
-                        return r.value.fsPath;
-                    } else if (r.value && r.value.uri && isUriLike(r.value.uri)) {
-                        return r.value.uri.fsPath;
-                    }
-                }
-            } catch (e) {
-                // fall through to empty string on unexpected shape
-            }
-            return '';
-        })
-        .join('');
+  return (response as any).response
+    .map((r: any) => {
+      try {
+        if (isMarkdownPartLike(r)) {
+          return String(r.value.value);
+        } else if (isAnchorPartLike(r)) {
+          if (isUriLike(r.value)) {
+            return r.value.fsPath;
+          } else if (r.value && r.value.uri && isUriLike(r.value.uri)) {
+            return r.value.uri.fsPath;
+          }
+        }
+      } catch (e) {
+        // fall through to empty string on unexpected shape
+      }
+      return "";
+    })
+    .join("");
 }
 
 interface PromptReferencesProps extends BasePromptElementProps {
-    references: ReadonlyArray<vscode.ChatPromptReference>;
-    excludeReferences?: boolean;
-    workspaceFolder?: vscode.WorkspaceFolder;
+  references: ReadonlyArray<vscode.ChatPromptReference>;
+  excludeReferences?: boolean;
+  workspaceFolder?: vscode.WorkspaceFolder;
 }
 
 class PromptReferences extends PromptElement<PromptReferencesProps, void> {
-    render(_state: void, _sizing: PromptSizing): PromptPiece {
-        return (
-            <UserMessage>
-                {this.props.references.map(ref => (
-                    <PromptReferenceElement 
-                        ref={ref} 
-                        excludeReferences={this.props.excludeReferences}
-                        workspaceFolder={this.props.workspaceFolder}
-                    />
-                ))}
-            </UserMessage>
-        );
-    }
+  render(_state: void, _sizing: PromptSizing): PromptPiece {
+    return (
+      <UserMessage>
+        {this.props.references.map((ref) => (
+          <PromptReferenceElement
+            ref={ref}
+            excludeReferences={this.props.excludeReferences}
+            workspaceFolder={this.props.workspaceFolder}
+          />
+        ))}
+      </UserMessage>
+    );
+  }
 }
 
 interface PromptReferenceProps extends BasePromptElementProps {
-    ref: vscode.ChatPromptReference;
-    excludeReferences?: boolean;
-    workspaceFolder?: vscode.WorkspaceFolder;
+  ref: vscode.ChatPromptReference;
+  excludeReferences?: boolean;
+  workspaceFolder?: vscode.WorkspaceFolder;
 }
 
 class PromptReferenceElement extends PromptElement<PromptReferenceProps> {
-    async render(_state: void, _sizing: PromptSizing): Promise<PromptPiece | undefined> {
-        const value: any = this.props.ref.value;
-        if (isUriLike(value)) {
-            let uri = value as vscode.Uri;
-            if (!uri.scheme && this.props.workspaceFolder) {
-                uri = vscode.Uri.file(path.join(this.props.workspaceFolder.uri.fsPath, uri.fsPath));
-            }
-            try {
-                const stat = await vscode.workspace.fs.stat(uri);
-                // If the URI is a directory, avoid readFile which throws EISDIR.
-                if (stat.type === vscode.FileType.Directory) {
-                    const entries = await vscode.workspace.fs.readDirectory(uri);
-                    const names = entries
-                        .map(([name, type]) => `${name}${type === vscode.FileType.Directory ? '/' : ''}`)
-                        .join(', ');
-                    return (
-                        <Tag name="context">
-                            {!this.props.excludeReferences && 
-                                <references value={[new PromptReference(uri)]} />}
-                            {uri.fsPath}:<br />
-                            ``` <br />
-                            Directory contents: {names}<br />
-                            ```<br />
-                        </Tag>
-                    );
-                }
-
-                const fileContents = (await vscode.workspace.fs.readFile(uri)).toString();
-                return (
-                    <Tag name="context">
-                        {!this.props.excludeReferences && 
-                            <references value={[new PromptReference(uri)]} />}
-                        {uri.fsPath}:<br />
-                        ``` <br />
-                        {fileContents}<br />
-                        ```<br />
-                    </Tag>
-                );
-            } catch (err) {
-                // If anything goes wrong (permissions, EISDIR, etc.), show a safe message.
-                const msg = (err instanceof Error) ? err.message : String(err);
-                return (
-                    <Tag name="context">
-                        {!this.props.excludeReferences && 
-                            <references value={[new PromptReference(uri)]} />}
-                        {uri.fsPath}:<br />
-                        ``` <br />
-                        Unable to read resource: {msg}<br />
-                        ```<br />
-                    </Tag>
-                );
-            }
-        } else if (isLocationLike(value)) {
-            let uri: vscode.Uri = value.uri;
-            if (!uri.scheme && this.props.workspaceFolder) {
-                uri = vscode.Uri.file(path.join(this.props.workspaceFolder.uri.fsPath, uri.fsPath));
-            }
-            const rangeText = (await vscode.workspace.openTextDocument(uri))
-                .getText(value.range);
-            return (
-                <Tag name="context">
-                    {!this.props.excludeReferences && 
-                        <references value={[new PromptReference(value)]} />}
-                    {uri.fsPath}:{value.range.start.line + 1}-
-                    {value.range.end.line + 1}: <br />
-                    ```<br />
-                    {rangeText}<br />
-                    ```
-                </Tag>
-            );
-        } else if (typeof value === 'string') {
-            return <Tag name="context">{value}</Tag>;
+  async render(
+    _state: void,
+    _sizing: PromptSizing
+  ): Promise<PromptPiece | undefined> {
+    const value: any = this.props.ref.value;
+    if (isUriLike(value)) {
+      let uri = value as vscode.Uri;
+      if (!uri.scheme && this.props.workspaceFolder) {
+        uri = vscode.Uri.file(
+          path.join(this.props.workspaceFolder.uri.fsPath, uri.fsPath)
+        );
+      }
+      try {
+        const stat = await vscode.workspace.fs.stat(uri);
+        // If the URI is a directory, avoid readFile which throws EISDIR.
+        if (stat.type === vscode.FileType.Directory) {
+          const entries = await vscode.workspace.fs.readDirectory(uri);
+          const names = entries
+            .map(
+              ([name, type]) =>
+                `${name}${type === vscode.FileType.Directory ? "/" : ""}`
+            )
+            .join(", ");
+          return (
+            <Tag name="context">
+              {!this.props.excludeReferences && (
+                <references value={[new PromptReference(uri)]} />
+              )}
+              {uri.fsPath}:<br />
+              ``` <br />
+              Directory contents: {names}
+              <br />
+              ```
+              <br />
+            </Tag>
+          );
         }
+
+        const fileContents = (
+          await vscode.workspace.fs.readFile(uri)
+        ).toString();
+        return (
+          <Tag name="context">
+            {!this.props.excludeReferences && (
+              <references value={[new PromptReference(uri)]} />
+            )}
+            {uri.fsPath}:<br />
+            ``` <br />
+            {fileContents}
+            <br />
+            ```
+            <br />
+          </Tag>
+        );
+      } catch (err) {
+        // If anything goes wrong (permissions, EISDIR, etc.), show a safe message.
+        const msg = err instanceof Error ? err.message : String(err);
+        return (
+          <Tag name="context">
+            {!this.props.excludeReferences && (
+              <references value={[new PromptReference(uri)]} />
+            )}
+            {uri.fsPath}:<br />
+            ``` <br />
+            Unable to read resource: {msg}
+            <br />
+            ```
+            <br />
+          </Tag>
+        );
+      }
+    } else if (isLocationLike(value)) {
+      let uri: vscode.Uri = value.uri;
+      if (!uri.scheme && this.props.workspaceFolder) {
+        uri = vscode.Uri.file(
+          path.join(this.props.workspaceFolder.uri.fsPath, uri.fsPath)
+        );
+      }
+      const rangeText = (await vscode.workspace.openTextDocument(uri)).getText(
+        value.range
+      );
+      return (
+        <Tag name="context">
+          {!this.props.excludeReferences && (
+            <references value={[new PromptReference(value)]} />
+          )}
+          {uri.fsPath}:{value.range.start.line + 1}-{value.range.end.line + 1}:{" "}
+          <br />
+          ```
+          <br />
+          {rangeText}
+          <br />
+          ```
+        </Tag>
+      );
+    } else if (typeof value === "string") {
+      return <Tag name="context">{value}</Tag>;
     }
+  }
 }
 
 type TagProps = PromptElementProps<{
-    name: string;
+  name: string;
 }>;
 
 class Tag extends PromptElement<TagProps> {
-    private static readonly _regex = /^[a-zA-Z_][\w.-]*$/;
+  private static readonly _regex = /^[a-zA-Z_][\w.-]*$/;
 
-    render() {
-        const { name } = this.props;
-        if (!Tag._regex.test(name)) {
-            throw new Error(`Invalid tag name: ${this.props.name}`);
-        }
-        return (
-            <>
-                {'<' + name + '>'}<br />
-                <>{this.props.children}<br /></>
-                {'</' + name + '>'}<br />
-            </>
-        );
+  render() {
+    const { name } = this.props;
+    if (!Tag._regex.test(name)) {
+      throw new Error(`Invalid tag name: ${this.props.name}`);
     }
+    return (
+      <>
+        {"<" + name + ">"}
+        <br />
+        <>
+          {this.props.children}
+          <br />
+        </>
+        {"</" + name + ">"}
+        <br />
+      </>
+    );
+  }
 }

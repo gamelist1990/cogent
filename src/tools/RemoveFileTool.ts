@@ -21,19 +21,44 @@ export class RemoveFileTool implements vscode.LanguageModelTool<IRemoveParams> {
                 throw new Error('Path is required');
             }
 
-            const targetUri = vscode.Uri.file(path.join(workspaceFolder.uri.fsPath, options.input.path));
+            const logger = (require('../components/Logger').Logger).getInstance();
+
+            // Normalize input path: accept absolute paths, workspace-relative paths, and file: URIs
+            let targetUri: vscode.Uri;
+            const raw = options.input.path;
+            try {
+                if (raw.startsWith('file:')) {
+                    targetUri = vscode.Uri.parse(raw);
+                } else if (path.isAbsolute(raw)) {
+                    targetUri = vscode.Uri.file(raw);
+                } else {
+                    // Relative to workspace folder
+                    targetUri = vscode.Uri.file(path.join(workspaceFolder.uri.fsPath, raw));
+                }
+            } catch (e) {
+                logger.error(`Failed to build target URI from input '${raw}': ${(e as Error).message}`);
+                throw e;
+            }
+
+            logger.debug(`RemoveFileTool: resolved targetUri=${targetUri.toString()} fsPath=${targetUri.fsPath}`);
 
             // Confirm existence
             try {
                 await vscode.workspace.fs.stat(targetUri);
             } catch (err) {
+                logger.warn(`Path does not exist: ${targetUri.toString()} (${(err as Error).message})`);
                 return new vscode.LanguageModelToolResult([
-                    new vscode.LanguageModelTextPart(`Path ${options.input.path} does not exist.`)
+                    new vscode.LanguageModelTextPart(`Path ${options.input.path} does not exist: ${(err as Error).message}`)
                 ]);
             }
 
             // Use workspace.fs.delete for deletion; allow recursive for directories
-            await vscode.workspace.fs.delete(targetUri, { recursive: !!options.input.recursive, useTrash: false });
+            try {
+                await vscode.workspace.fs.delete(targetUri, { recursive: !!options.input.recursive, useTrash: false });
+            } catch (err) {
+                logger.error(`Failed to delete ${targetUri.toString()}: ${(err as Error).message}`);
+                throw err;
+            }
 
             return new vscode.LanguageModelToolResult([
                 new vscode.LanguageModelTextPart(`Deleted ${options.input.path}`)
