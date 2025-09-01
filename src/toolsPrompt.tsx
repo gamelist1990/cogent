@@ -405,17 +405,51 @@ class PromptReferenceElement extends PromptElement<PromptReferenceProps> {
     async render(_state: void, _sizing: PromptSizing): Promise<PromptPiece | undefined> {
         const value = this.props.ref.value;
         if (value instanceof vscode.Uri) {
-            const fileContents = (await vscode.workspace.fs.readFile(value)).toString();
-            return (
-                <Tag name="context">
-                    {!this.props.excludeReferences && 
-                        <references value={[new PromptReference(value)]} />}
-                    {value.fsPath}:<br />
-                    ``` <br />
-                    {fileContents}<br />
-                    ```<br />
-                </Tag>
-            );
+            try {
+                const stat = await vscode.workspace.fs.stat(value);
+                // If the URI is a directory, avoid readFile which throws EISDIR.
+                if (stat.type === vscode.FileType.Directory) {
+                    const entries = await vscode.workspace.fs.readDirectory(value);
+                    const names = entries
+                        .map(([name, type]) => `${name}${type === vscode.FileType.Directory ? '/' : ''}`)
+                        .join(', ');
+                    return (
+                        <Tag name="context">
+                            {!this.props.excludeReferences && 
+                                <references value={[new PromptReference(value)]} />}
+                            {value.fsPath}:<br />
+                            ``` <br />
+                            Directory contents: {names}<br />
+                            ```<br />
+                        </Tag>
+                    );
+                }
+
+                const fileContents = (await vscode.workspace.fs.readFile(value)).toString();
+                return (
+                    <Tag name="context">
+                        {!this.props.excludeReferences && 
+                            <references value={[new PromptReference(value)]} />}
+                        {value.fsPath}:<br />
+                        ``` <br />
+                        {fileContents}<br />
+                        ```<br />
+                    </Tag>
+                );
+            } catch (err) {
+                // If anything goes wrong (permissions, EISDIR, etc.), show a safe message.
+                const msg = (err instanceof Error) ? err.message : String(err);
+                return (
+                    <Tag name="context">
+                        {!this.props.excludeReferences && 
+                            <references value={[new PromptReference(value)]} />}
+                        {value.fsPath}:<br />
+                        ``` <br />
+                        Unable to read resource: {msg}<br />
+                        ```<br />
+                    </Tag>
+                );
+            }
         } else if (value instanceof vscode.Location) {
             const rangeText = (await vscode.workspace.openTextDocument(value.uri))
                 .getText(value.range);

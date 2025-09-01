@@ -36,7 +36,7 @@ export function registerToolUserChatParticipant(context: vscode.ExtensionContext
         } else if (candidateFromContext) {
             model = candidateFromContext as vscode.LanguageModelChat;
         } else {
-            const MODEL_SELECTOR: vscode.LanguageModelChatSelector = { vendor: 'copilot', family: 'claude-3.5-sonnet' };
+            const MODEL_SELECTOR: vscode.LanguageModelChatSelector = { vendor: 'copilot', family: 'gpt-4.1' };
             let models = await vscode.lm.selectChatModels(MODEL_SELECTOR);
             model = models[0];
             if (!model) {
