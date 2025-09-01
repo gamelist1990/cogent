@@ -22,6 +22,32 @@ import * as path from 'path';
 import { Logger } from './components/Logger';
 import { buildPrompt } from './prompt';
 
+
+// Runtime-robust type guards to avoid instanceof failures across module boundaries
+function isChatRequestTurnLike(obj: any): obj is vscode.ChatRequestTurn {
+    return !!obj && typeof obj.prompt === 'string' && Array.isArray(obj.references);
+}
+
+function isChatResponseTurnLike(obj: any): obj is vscode.ChatResponseTurn {
+    return !!obj && Array.isArray(obj.response) && !!obj.result;
+}
+
+function isMarkdownPartLike(part: any): boolean {
+    return !!part && part.value && typeof part.value.value === 'string';
+}
+
+function isAnchorPartLike(part: any): boolean {
+    return !!part && part.value && (part.value.fsPath !== undefined || (part.value.uri && part.value.uri.fsPath !== undefined));
+}
+
+function isUriLike(value: any): value is vscode.Uri {
+    return !!value && typeof value.fsPath === 'string';
+}
+
+function isLocationLike(value: any): value is vscode.Location {
+    return !!value && value.uri !== undefined && value.range !== undefined;
+}
+
 export interface ToolCallRound {
     response: string;
     toolCalls: vscode.LanguageModelToolCallPart[];
@@ -259,8 +285,8 @@ class History extends PromptElement<HistoryProps, void> {
     render(_state: void, _sizing: PromptSizing) {
         return (
             <PrioritizedList priority={this.props.priority} descending={false}>
-                {this.props.context.history.map((message) => {
-                    if (message instanceof vscode.ChatRequestTurn) {
+                {this.props.context.history.map((message: any) => {
+                    if (isChatRequestTurnLike(message)) {
                         return (
                             <>
                                 <PromptReferences 
@@ -270,8 +296,8 @@ class History extends PromptElement<HistoryProps, void> {
                                 <UserMessage>{message.prompt}</UserMessage>
                             </>
                         );
-                    } else if (message instanceof vscode.ChatResponseTurn) {
-                        const metadata = message.result.metadata;
+                    } else if (isChatResponseTurnLike(message)) {
+                        const metadata = message.result?.metadata;
                         if (isTsxToolUserMetadata(metadata) && metadata.toolCallsMetadata.toolCallRounds.length > 0) {
                             return <ToolCalls 
                                 toolCallResults={metadata.toolCallsMetadata.toolCallResults} 
@@ -279,8 +305,9 @@ class History extends PromptElement<HistoryProps, void> {
                                 toolInvocationToken={undefined} 
                             />;
                         }
-                        return <AssistantMessage>{chatResponseToString(message)}</AssistantMessage>;
+                        return <AssistantMessage>{chatResponseToString(message as vscode.ChatResponseTurn)}</AssistantMessage>;
                     }
+                    return null;
                 })}
             </PrioritizedList>
         );
@@ -288,16 +315,20 @@ class History extends PromptElement<HistoryProps, void> {
 }
 
 function chatResponseToString(response: vscode.ChatResponseTurn): string {
-    return response.response
-        .map((r) => {
-            if (r instanceof vscode.ChatResponseMarkdownPart) {
-                return r.value.value;
-            } else if (r instanceof vscode.ChatResponseAnchorPart) {
-                if (r.value instanceof vscode.Uri) {
-                    return r.value.fsPath;
-                } else {
-                    return r.value.uri.fsPath;
+    return (response as any).response
+        .map((r: any) => {
+            try {
+                if (isMarkdownPartLike(r)) {
+                    return String(r.value.value);
+                } else if (isAnchorPartLike(r)) {
+                    if (isUriLike(r.value)) {
+                        return r.value.fsPath;
+                    } else if (r.value && r.value.uri && isUriLike(r.value.uri)) {
+                        return r.value.uri.fsPath;
+                    }
                 }
+            } catch (e) {
+                // fall through to empty string on unexpected shape
             }
             return '';
         })
@@ -334,9 +365,9 @@ interface PromptReferenceProps extends BasePromptElementProps {
 
 class PromptReferenceElement extends PromptElement<PromptReferenceProps> {
     async render(_state: void, _sizing: PromptSizing): Promise<PromptPiece | undefined> {
-        const value = this.props.ref.value;
-        if (value instanceof vscode.Uri) {
-            let uri = value;
+        const value: any = this.props.ref.value;
+        if (isUriLike(value)) {
+            let uri = value as vscode.Uri;
             if (!uri.scheme && this.props.workspaceFolder) {
                 uri = vscode.Uri.file(path.join(this.props.workspaceFolder.uri.fsPath, uri.fsPath));
             }
@@ -385,8 +416,8 @@ class PromptReferenceElement extends PromptElement<PromptReferenceProps> {
                     </Tag>
                 );
             }
-        } else if (value instanceof vscode.Location) {
-            let uri = value.uri;
+        } else if (isLocationLike(value)) {
+            let uri: vscode.Uri = value.uri;
             if (!uri.scheme && this.props.workspaceFolder) {
                 uri = vscode.Uri.file(path.join(this.props.workspaceFolder.uri.fsPath, uri.fsPath));
             }

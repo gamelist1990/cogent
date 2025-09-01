@@ -104,6 +104,37 @@ export function registerToolUserChatParticipant(context: vscode.ExtensionContext
             justification: 'To make a request to Cogent',
         };
 
+        // Summarize chat history to ensure previous turns are visible to the model even if
+        // instanceof checks fail across module boundaries. We keep the summary short.
+        function summarizeHistory(ctx: vscode.ChatContext): string {
+            try {
+                if (!ctx?.history || !ctx.history.length) return '';
+                const parts: string[] = [];
+                for (const turn of ctx.history.slice(-10)) { // last up to 10 turns
+                    try {
+                        if ((turn as any).prompt) {
+                            parts.push(`User: ${(turn as any).prompt}`);
+                        } else if ((turn as any).response) {
+                            const text = (turn as any).response
+                                .map((r: any) => {
+                                    if (r?.value?.value) return String(r.value.value);
+                                    if (r?.value?.fsPath) return r.value.fsPath;
+                                    if (r?.value?.uri && r.value.uri.fsPath) return r.value.uri.fsPath;
+                                    return '';
+                                })
+                                .filter(Boolean)
+                                .join(' ');
+                            if (text) parts.push(`Assistant: ${text}`);
+                        }
+                    } catch { /* ignore malformed turn */ }
+                }
+                return parts.join('\n');
+            } catch { return ''; }
+        }
+
+        const historySummary = summarizeHistory(chatContext);
+        const procPrompt = historySummary ? `${historySummary}\n\n${request.prompt}` : request.prompt;
+
         const result = await renderPrompt(
             ToolUserPrompt,
             {
@@ -111,7 +142,7 @@ export function registerToolUserChatParticipant(context: vscode.ExtensionContext
                 request,
                 toolCallRounds: [],
                 toolCallResults: {},
-                processedPrompt: request.prompt
+                processedPrompt: procPrompt
             },
             { modelMaxPromptTokens: model.maxInputTokens },
             model
