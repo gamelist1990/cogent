@@ -204,15 +204,64 @@ class ToolResultElement extends PromptElement<ToolResultElementProps, void> {
         let toolResult: vscode.LanguageModelToolResult | undefined = this.props.toolCallResult;
         try {
             if (!toolResult) {
-                toolResult = await vscode.lm.invokeTool(
-                    this.props.toolCall.name,
-                    {
-                        input: this.props.toolCall.input,
-                        toolInvocationToken: this.props.toolInvocationToken,
-                        tokenizationOptions
-                    },
-                    dummyCancellationToken
-                );
+                // Defensive sanitization: models sometimes emit JSON-like strings that represent
+                // patch objects (e.g. '{"path":"src/...","content":"..."}'). Passing those
+                // directly to tools can cause accidental double-serialization or writes. Try to
+                // detect and parse such strings into objects before invoking the tool. If parsing
+                // fails or the input still looks dangerous, invoke the tool with the original input
+                // but log the event and return a safe message.
+                let invocationInput: any = this.props.toolCall.input;
+                const logger = Logger.getInstance();
+
+                const looksLikeSerializedPatch = (s: string) => {
+                    return typeof s === 'string' && /\{\s*"path"\s*\:/.test(s) && /"content"\s*\:/.test(s);
+                };
+
+                try {
+                    if (typeof invocationInput === 'string' && looksLikeSerializedPatch(invocationInput)) {
+                        // Try to JSON-parse once
+                        try {
+                            const parsed = JSON.parse(invocationInput);
+                            // If parsed looks like a patch/object with expected fields, use it
+                            if (parsed && (parsed.path || parsed.content)) {
+                                invocationInput = parsed;
+                            }
+                        } catch (e) {
+                            logger.error(`Failed to parse serialized tool input JSON: ${(e as Error).message}`);
+                        }
+                    }
+
+                    // If the input is now an object and contains a `content` field that itself
+                    // looks like a serialized patch, attempt to unwrap one level.
+                    if (invocationInput && typeof invocationInput === 'object' && typeof invocationInput.content === 'string' && looksLikeSerializedPatch(invocationInput.content)) {
+                        try {
+                            const inner = JSON.parse(invocationInput.content);
+                            if (inner && (inner.path || inner.content)) {
+                                // Prefer the inner object's content if present; otherwise keep as-is.
+                                invocationInput.content = inner.content ?? invocationInput.content;
+                            }
+                        } catch (e) {
+                            logger.error(`Failed to parse nested serialized tool input: ${(e as Error).message}`);
+                        }
+                    }
+
+                    // If invocationInput still looks suspicious (stringified patch), refuse to call and return a safe message
+                    if (typeof invocationInput === 'string' && looksLikeSerializedPatch(invocationInput)) {
+                        return <ToolMessage toolCallId={this.props.toolCall.callId}>Tool invocation refused: input looks like a serialized patch object.</ToolMessage>;
+                    }
+
+                    toolResult = await vscode.lm.invokeTool(
+                        this.props.toolCall.name,
+                        {
+                            input: invocationInput,
+                            toolInvocationToken: this.props.toolInvocationToken,
+                            tokenizationOptions
+                        },
+                        dummyCancellationToken
+                    );
+                } catch (invokeErr) {
+                    throw invokeErr; // will be handled by outer catch
+                }
             }
 
             // Defensive: if toolResult is falsy or doesn't contain expected data, provide a safe message
