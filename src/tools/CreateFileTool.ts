@@ -19,18 +19,26 @@ export class CreateFileTool implements vscode.LanguageModelTool<ICreateParams> {
                 throw new Error('No workspace folder found');
             }
             const rawPath = (options.input.path ?? '').toString().trim();
+            // Normalize AI-provided paths: if the model emits a path that starts with
+            // a leading slash (e.g. "/src/file.js"), treat it as workspace-relative
+            // rather than a platform absolute path. This ensures the tool acts on
+            // the repository workspace path the user expects.
+            let normalizedRawPath = rawPath;
+            if (normalizedRawPath.startsWith('/') && !/^[a-zA-Z]:[\\/]/.test(normalizedRawPath)) {
+                normalizedRawPath = normalizedRawPath.replace(/^\/+/, '');
+            }
             if (!rawPath) {
                 throw new Error('Path is required (provide a path relative to the workspace root)');
             }
             // Determine target filesystem path. Allow absolute paths if explicitly configured.
-            const isWindowsDrive = /^[a-zA-Z]:\\/.test(rawPath) || /^[a-zA-Z]:\//.test(rawPath);
-            const isAbsolutePath = path.isAbsolute(rawPath) || isWindowsDrive;
+            const isWindowsDrive = /^[a-zA-Z]:[\\/]/.test(normalizedRawPath);
+            const isAbsolutePath = path.isAbsolute(normalizedRawPath) && !normalizedRawPath.startsWith('/') ? path.isAbsolute(normalizedRawPath) : isWindowsDrive;
 
             let targetFsPath: string;
             if (isAbsolutePath) {
-                targetFsPath = path.normalize(rawPath);
+                targetFsPath = path.normalize(normalizedRawPath);
             } else {
-                targetFsPath = path.normalize(path.resolve(workspaceFolder.uri.fsPath, rawPath));
+                targetFsPath = path.normalize(path.resolve(workspaceFolder.uri.fsPath, normalizedRawPath));
             }
 
             const relative = path.relative(workspaceFolder.uri.fsPath, targetFsPath);

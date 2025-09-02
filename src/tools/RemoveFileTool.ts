@@ -23,12 +23,18 @@ export class RemoveFileTool implements vscode.LanguageModelTool<IRemoveParams> {
             }
 
             const rawPath = (options.input.path ?? '').toString().trim();
-            const isWindowsDrive = /^[a-zA-Z]:\\/.test(rawPath) || /^[a-zA-Z]:\//.test(rawPath);
-            const isAbsolutePath = path.isAbsolute(rawPath) || isWindowsDrive;
+            // Normalize AI-provided paths: treat leading '/' as workspace-relative
+            let normalizedRawPath = rawPath;
+            if (normalizedRawPath.startsWith('/') && !/^[a-zA-Z]:[\\/]/.test(normalizedRawPath)) {
+                normalizedRawPath = normalizedRawPath.replace(/^\/+/, '');
+            }
+
+            const isWindowsDrive = /^[a-zA-Z]:[\\/]/.test(normalizedRawPath);
+            const isAbsolutePath = path.isAbsolute(normalizedRawPath) && !normalizedRawPath.startsWith('/') ? path.isAbsolute(normalizedRawPath) : isWindowsDrive;
 
             const targetFsPath = isAbsolutePath
-                ? path.normalize(rawPath)
-                : path.normalize(path.join(workspaceFolder.uri.fsPath, rawPath));
+                ? path.normalize(normalizedRawPath)
+                : path.normalize(path.join(workspaceFolder.uri.fsPath, normalizedRawPath));
 
             const targetUri = vscode.Uri.file(targetFsPath);
 
