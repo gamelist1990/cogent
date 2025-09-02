@@ -1,10 +1,9 @@
-# 🚀 Cogent: Your Agentic AI-Powered Coding Companion
+# 🚀 Cogent: エージェント型 AI コーディングアシスタント
 
-> "Because rubber duck debugging is better with a duck that talks back!" 
+> 「会話するアヒルと一緒のラバーダックデバッグの方がずっと良い！」
 
-![Cogent Demo](assets/cogent.gif)
 
-Cogent is an agentic Github Copilot VSCode chat extension that transforms your coding environment into an autonomous development powerhouse. Think of it as having a brilliant (and slightly nerdy) AI agent who not only understands your code but can independently take actions while keeping you in control. It's your witty companion that makes coding feel like pair programming with a super-smart friend who never needs coffee breaks!
+Cogent は、エージェント機能を備えた GitHub Copilot 用の VSCode チャット拡張です。コーディング環境を自律的に動作する開発アシスタントに変えます。コードを理解するだけでなく、ユーザーの管理下で独立して操作を実行できる賢い（ちょっとオタクな）AI エージェントを想像してください。まるでコーヒー不要の優秀なペアプログラマーと一緒に作業しているような感覚を提供します。
 
 <div align="center">
   
@@ -12,147 +11,147 @@ Cogent is an agentic Github Copilot VSCode chat extension that transforms your c
 
 </div>
 
-## 🎯 Prerequisites
+## 🎯 前提条件
 
-Before we embark on this magical journey, make sure you have:
+この素敵な旅を始める前に、以下を確認してください：
 
-- 💳 Active GitHub Copilot subscription
-- 📦 VS Code 1.95.0 or higher
-- 🤖 GitHub Copilot Chat extension
+- 💳 有効な GitHub Copilot サブスクリプション
+- 📦 VS Code 1.95.0 以上
+- 🤖 GitHub Copilot Chat 拡張
 
-## ✨ Features
+## ✨ 機能
 
-- 🤖 **Autonomous Agent** - Works independently with minimal supervision
-- 📝 **Smart File Operations** - Create, read, update and diff-apply for precise updates to also handle large files with AI precision
-- 🎮 **Command Execution** - Run terminal commands without leaving your chat
-- 🧠 **Context-Aware** - Understands your entire project structure
-- 🤝 **Pair Programming** - Like pair programming, but your partner never needs coffee breaks
-- 🔒 **Safe Operations** - Asks for your approval before making changes or running commands
-- 📚 **Workspace Awareness** - Can load your entire workspace for better context (configurable)
-- 📜 **Custom Rules** - Teach your AI companion your project's special needs
+- 🤖 自律エージェント — 最小限の監督で自律的に動作します
+- 📝 スマートなファイル操作 — 作成・読み取り・更新・差分適用を行い、大きなファイルも AI による精度で扱います
+- 🎮 コマンド実行 — チャットを離れずにターミナルコマンドを実行できます
+- 🧠 コンテキスト認識 — プロジェクト構成全体を理解します
+- 🤝 ペアプログラミング — ペアプログラミングのように、相手はコーヒーを必要としません
+- 🔒 安全な操作 — 変更やコマンド実行の前に承認を求めます
+- 📚 ワークスペース認識 — 必要に応じてワークスペース全体をロードできます（設定で変更可）
+- 📜 カスタムルール — プロジェクト固有のルールを AI に教えられます
 
-## 🚀 Installation
+## 🚀 インストール
 
-### For Development
+### 開発用
 
-1. Clone the repository
-2. Install dependencies:
+1. リポジトリをクローン
+2. 依存関係をインストール:
    ```bash
    npm install
    ```
-3. Compile the extension:
+3. 拡張機能をビルド:
    ```bash
    npm run compile
    ```
-4. Press F5 in VS Code to start debugging
-   > This will open a new VS Code window with the extension loaded
+4. VS Code で F5 を押してデバッグを開始
+   > 新しい VS Code ウィンドウが開き、拡張機能が読み込まれます
 
-### Distribution
+### 配布用
 
-Want to package the extension for distribution? Easy peasy:
+拡張機能を配布パッケージにしたいですか？簡単です：
 
-1. Install vsce globally:
+1. vsce をグローバルにインストール:
    ```bash
    npm install -g @vscode/vsce
    ```
-2. Package the extension:
+2. 拡張をパッケージ化:
    ```bash
    vsce package
    ```
-   This creates a `.vsix` file you can distribute!
+   `.vsix` ファイルが生成され、配布可能になります。
 
-## ⚙️ Configuration
+## ⚙️ 設定
 
-### Workspace Awareness
+### ワークスペース認識
 
-Cogent can be as nosy or respectful as you want with your workspace:
+Cogent はワークスペースに対して、より「密に覗き込む」か「控えめ」にするかを選べます：
 
 ![use_full_workspace](assets/use-full-workspace.png)
 
-- When `true`: Cogent loads your entire workspace upfront. Respects your .gitignore file
-- When `false`: Reads files on-demand. This is the default setting.
+- `true` のとき：Cogent はワークスペース全体を事前に読み込みます（.gitignore を尊重します）
+- `false` のとき：必要に応じてファイルをオンデマンドで読み込みます（デフォルト）
 
-> 💡 Tip: Disable for large workspaces unless you want Cogent to have a coffee break while loading!
+> 💡 ヒント: 大きなワークスペースでは無効にしておくと、読み込み時間を短縮できます。
 
-### Custom Rules
+### カスタムルール
 
-Want Cogent to follow your house rules? Create a `.cogentrules` file in your workspace root:
+プロジェクトのルールを Cogent に守らせたい場合は、ワークスペースルートに `.cogentrules` ファイルを作成してください：
 
 ```plaintext
-# Example .cogentrules
-1. Always use TypeScript strict mode
-2. Follow Angular style guide
-3. No console.log(), use proper logging service
+# 例 .cogentrules
+1. 常に TypeScript の strict モードを使用する
+2. Angular スタイルガイドに従う
+3. console.log() を使わず、適切なロギングサービスを使う
 ```
 
-Think of it as leaving a note for your AI roommate about how to keep the code clean! 🧹
+AI のルールメモのように機能します。コードの品質維持に役立ちます。
 
-### Auto Approval Mode
+### 自動承認モード
 
-Want to live life on the edge?🎢 Enable auto approval for specific operations:
+ちょっと冒険したいですか？🎢 特定の操作について自動承認を有効にできます：
 
 ![auto_approve_tools](assets/auto-approve-tools.png)
 
-> ⚠️ WARNING: Enabling auto approval is like giving your AI assistant caffeine and a credit card. Fun things will happen faster, but maybe keep an eye on those pull requests! Remember: with great automation comes great "what did I just approve?" moments. 😅
+> ⚠️ 注意: 自動承認を有効にすることは、AI に自由度と権限を与えることと同義です。便利ですが Pull Request 等を定期的にチェックすることをおすすめします。
 
-## 🎮 Usage
+## 🎮 使い方
 
-1. Open GitHub Copilot Chat in VS Code
-2. Type `@Cogent` followed by your request
-3. Watch your agentic buddy spring into action!
+1. VS Code で GitHub Copilot Chat を開く
+2. `@Cogent` に続けてリクエストを入力
+3. エージェントが動き出すのを見守るだけ！
 
-Cogent works autonomously but always asks for your approval when:
-- Creating or modifying files in your workspace
-- Running terminal commands
-- Making significant project changes
+Cogent は自律動作しますが、以下の操作では常に承認を求めます：
+- ワークスペース内のファイルの作成や変更
+- ターミナルコマンドの実行
+- 大きなプロジェクト変更
 
-This ensures you stay in control while letting Cogent handle the heavy lifting!
+これにより、ユーザーのコントロールを保ちながら自動化を活用できます。
 
-## 💬 Example Conversations
-
-```
-You: "@Cogent Can you help me refactor this function?"
-Cogent: "I'll analyze your code and suggest some improvements. Here's my plan..."
-```
+## 💬 例：会話
 
 ```
-You: "@Cogent Create a new React component for user authentication"
-Cogent: "I'll help you create a secure authentication component. First, let me outline the structure..."
+You: "@Cogent この関数のリファクタを手伝ってくれる？"
+Cogent: "コードを解析して改善案を提案します。まずは計画を提示します..."
 ```
 
-## 🎭 Behind the Scenes
+```
+You: "@Cogent ユーザー認証用の React コンポーネントを作って"
+Cogent: "セキュアな認証コンポーネントを作成します。まず構造を提案します..."
+```
 
-Cogent is powered by the GitHub Copilot and mighty Claude-3.5-Sonnet model. It's like having a tiny developer living in your VS Code. Don't worry, we feed them virtual cookies! 🍪
+## 🎭 背景
 
-## 🤝 Contributing
+Cogent は GitHub Copilot と Claude-3.5-Sonnet（モデル名は例示）の力で動作します。まるで小さな開発者が VS Code 内にいるような体験を提供します。安心してください、仮想クッキーは用意しています！ 🍪
 
-Found a bug? Want to make Cogent even more awesome? We love contributions! Just:
+## 🤝 貢献
 
-1. Fork it (like a pro)
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazingness'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a PR and do a little victory dance 💃
+バグを見つけましたか？機能を追加したいですか？大歓迎です！手順は以下の通り：
 
-## 🤖 Agent Guidelines
+1. フォークする
+2. 機能ブランチを作成 (`git checkout -b feature/amazing-feature`)
+3. 変更をコミット (`git commit -m 'Add some amazingness'`)
+4. ブランチにプッシュ (`git push origin feature/amazing-feature`)
+5. PR を作成してちょっとした勝利のダンスを踊る 💃
 
-Automated agents and Copilot-like tools should follow the repository's agent behavior rules described in `AGENT_GUIDELINES.md`. In short: always run `list_code_usages` to discover definition and references before editing code, and run `get_errors` after edits and fix any errors until none remain.
+## 🤖 エージェントガイドライン
 
-## 🐛 Bug Reports
+自動化エージェントや Copilot のようなツールは、`AGENT_GUIDELINES.md` に記載されたリポジトリの行動ルールに従ってください。簡潔に言うと：編集前に `list_code_usages` を実行して定義や参照を確認し、編集後は `get_errors` を実行してエラーが残らないようにしてください。
 
-If something's not working quite right:
+## 🐛 バグ報告
 
-1. Open an issue
-2. Tell us what went wrong (the more details, the better!)
-3. Show us how to reproduce it
-4. Cross your fingers and wait for the fix
+不具合がある場合は：
 
-## 📜 License
+1. Issue を開く
+2. どのような問題が発生したか詳細に説明する
+3. 再現手順を示す
+4. 修正を待つ（そして祈る）
 
-MIT - Because sharing is caring! Feel free to use this in your projects, but remember to give a virtual high-five back! 🖐️
+## 📜 ライセンス
+
+MIT - 共有は思いやり！プロジェクトでの利用は自由ですが、もし使ったらバーチャルなハイタッチをお願いします！ 🖐️
 
 ---
 
 Made with ❤️ and lots of ☕ by awesome developers like you!
 
-*Remember: The best code is the one that works... but the second-best is not writing any code at all!* 😉
+*覚えておいてください：一番良いコードは「動くコード」です…でも二番目に良いのは何も書かないことです！* 😉
