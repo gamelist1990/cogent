@@ -73,8 +73,7 @@ export function registerToolUserChatParticipant(context: vscode.ExtensionContext
         // Announce the model being used to the chat so the user sees it before the assistant PLAN
         try {
             const modelDisplay = getModelDisplayName(model);
-            stream.markdown(`model: ${modelDisplay}`);
-            stream.markdown(` `);
+            stream.markdown(`model: ${modelDisplay}\n\n`);
         } catch (e) {
             // Fail silently; announcing the model is optional and should not block handling
             /* noop */
@@ -139,9 +138,16 @@ export function registerToolUserChatParticipant(context: vscode.ExtensionContext
         const runWithTools = async (): Promise<void> => {
             const requestedTool = toolReferences.shift();
             if (requestedTool) {
-                // A specific tool was requested by the chat request; require that single tool.
-                options.toolMode = vscode.LanguageModelChatToolMode.Required;
-                options.tools = vscode.lm.tools.filter(tool => tool.name === requestedTool.name);
+                // A specific tool was requested by the chat request.
+                // Only mark the toolMode as Required when we resolved exactly one matching tool.
+                const matchingTools = vscode.lm.tools.filter(tool => tool.name === requestedTool.name);
+                options.tools = matchingTools;
+                if (matchingTools.length === 1) {
+                    options.toolMode = vscode.LanguageModelChatToolMode.Required;
+                } else {
+                    // If multiple (or zero) tools match, don't use Required as that is not supported.
+                    options.toolMode = vscode.LanguageModelChatToolMode.Auto;
+                }
             } else {
                 // Prefer built-in Copilot tools over custom tools
                 const builtInTools = vscode.lm.tools.filter(tool => !tool.name.startsWith('cogent_'));

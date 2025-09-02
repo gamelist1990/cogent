@@ -74,6 +74,7 @@ export function buildPrompt(opts: BuildPromptOptions): string {
 		'',
 		'## 提供されるツール（要点）',
 		"- Copilot の組み込みツールをメインに使用する：`run_in_terminal`, `read_file`, `replace_string_in_file`, `insert_edit_into_file`, `grep_search`, `semantic_search`, `list_dir`, `get_errors` など。",
+		"- 優先事項: 基本メインはCopilotの組み込みツールですが一部 新規ファイル作成だけは`cogent_createFile`を利用します。",
 		"- カスタムツール：`cogent_removeFile`: { path: string, recursive?: boolean } — workspace.fs.delete を利用します。",
 		"- カスタムツール：`cogent_createFile`: { path: string, content?: string, overwrite?: boolean } — workspace.fs.writeFile を利用します。",
 		"- 組み込みツールが利用可能な場合は優先的に使用し、必要に応じてカスタムツールを補完する。",

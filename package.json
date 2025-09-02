@@ -1,71 +1,65 @@
 {
-    "name": "cogent",
-    "displayName": "Cogent",
-    "description": "Cogent is a Copilot extension that gives it agenting capabilities like executing commands, editing and reading files, and more.",
-    "version": "2.0.0",
-    "engines": {
-        "vscode": "^1.95.0"
-    },
-    "categories": [
-        "Other",
-        "AI"
-    ],
-    "icon": "assets/cogent.jpeg",
-    "license": "MIT",
-    "publisher": "kturung",
-    "repository": {
-		"type": "git",
-		"url": "https://github.com/kturung/cogent"
-	},
-    
-    "main": "./out/extension.js",
-    "activationEvents": [],
-    "contributes": {
-        "configuration": {
-            "title": "Cogent",
-            "properties": {
-                "cogent.autoConfirmTools": {
-                    "type": "object",
-                    "properties": {
-                        "writeFile": {
-                            "type": "boolean",
-                            "default": false,
-                            "description": "Auto confirm file creation operations"
-                        },
-                        "createFile": {
-                            "type": "boolean",
-                            "default": false,
-                            "description": "Auto confirm file creation operations (cogent_createFile)"
-                        },
-                        "removeFile": {
-                            "type": "boolean",
-                            "default": false,
-                            "description": "Auto confirm file/directory delete operations"
-                        }
-                    },
-                    "additionalProperties": false,
-                    "default": {
-                        "createFile": false,
-                        "removeFile": false
-                    },
-                    "description": "Configure which tools should auto-confirm their operations without showing confirmation dialog",
-                    "order": 2
-                },
-                "cogent.debug": {
-                    "type": "boolean",
-                    "default": false,
-                    "description": "Enable debug logging in the output channel",
-                    "order": 3
-                },
-                "cogent.allowExternalFileCreation": {
-                    "type": "boolean",
-                    "default": true,
-                    "description": "Allow CreateFileTool to create files outside the workspace root when enabled (use with caution).",
-                    "order": 4.5
-                }
+  "name": "cogent",
+  "displayName": "Cogent",
+  "description": "Cogent is a Copilot extension that gives it agenting capabilities like executing commands, editing and reading files, and more.",
+  "version": "2.0.0",
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Other",
+    "AI"
+  ],
+  "icon": "assets/cogent.jpeg",
+  "license": "MIT",
+  "publisher": "kturung",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kturung/cogent"
+  },
+  "main": "./out/extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "configuration": {
+      "title": "Cogent",
+      "properties": {
+        "cogent.autoConfirmTools": {
+          "type": "object",
+          "properties": {
+            "createFile": {
+              "type": "boolean",
+              "default": false,
+              "description": "Auto confirm file creation operations (cogent_createFile)"
+            },
+            "removeFile": {
+              "type": "boolean",
+              "default": false,
+              "description": "Auto confirm file/directory delete operations"
             }
+          },
+          "additionalProperties": false,
+          "default": {
+            "createFile": false,
+            "removeFile": false
+          },
+          "description": "Configure which tools should auto-confirm their operations without showing confirmation dialog",
+          "order": 2
         },
-        "chatParticipants": [
+        "cogent.debug": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable debug logging in the output channel",
+          "order": 3
+        },
+        "cogent.allowExternalFileCreation": {
+          "type": "boolean",
+          "default": true,
+          "description": "Allow CreateFileTool to create files outside the workspace root when enabled (use with caution).",
+          "order": 4.5
+        }
+      }
+    },
+    "chatParticipants": [
       {
         "id": "cogent.assistant",
         "name": "cogent",
@@ -73,60 +67,84 @@
         "isSticky": true
       }
     ],
-        "languageModelTools": [
-            {
-                "name": "cogent_removeFile",
-                "tags": ["files", "delete"],
-                "displayName": "Remove File/Directory",
-                "modelDescription": "Delete a file or directory in the workspace. Use recursive=true for directories.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "path": { "type": "string", "description": "Relative path to delete" },
-                        "recursive": { "type": "boolean", "description": "Whether to delete directories recursively" }
-                    },
-                    "required": ["path"]
-                }
+    "languageModelTools": [
+      {
+        "name": "cogent_removeFile",
+        "tags": [
+          "files",
+          "delete"
+        ],
+        "displayName": "Remove File/Directory",
+        "modelDescription": "Delete a file or directory in the workspace. Use recursive=true for directories.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Relative path to delete"
+            },
+            "recursive": {
+              "type": "boolean",
+              "description": "Whether to delete directories recursively"
             }
-            ,
-            {
-                "name": "cogent_createFile",
-                "tags": ["files", "create"],
-                "displayName": "Create File",
-                "modelDescription": "Create a new file in the workspace, creating parent directories as needed. Set overwrite=true to replace existing files.",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "path": { "type": "string", "description": "Relative path to create" },
-                        "content": { "type": "string", "description": "File contents" },
-                        "overwrite": { "type": "boolean", "description": "Whether to overwrite if file exists" }
-                    },
-                    "required": ["path"]
-                }
+          },
+          "required": [
+            "path"
+          ]
+        }
+      },
+      {
+        "name": "cogent_createFile",
+        "tags": [
+          "files",
+          "create"
+        ],
+        "displayName": "Create File",
+        "modelDescription": "Create a new file in the workspace, creating parent directories as needed. Set overwrite=true to replace existing files.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Relative path to create"
+            },
+            "content": {
+              "type": "string",
+              "description": "File contents"
+            },
+            "overwrite": {
+              "type": "boolean",
+              "description": "Whether to overwrite if file exists"
             }
-        ]
-    },
-    "scripts": {
-        "vscode:prepublish": "npm run compile",
-        "compile": "tsc -p ./",
-        "watch": "tsc -watch -p ./",
-        "pretest": "npm run compile && npm run lint",
-        "lint": "eslint src",
-        "test": "vscode-test"
-    },
-    "dependencies": {
+          },
+          "required": [
+            "path"
+          ]
+        }
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "npx @vscode/vsce package",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "dependencies": {
     "@vscode/prompt-tsx": "^0.3.0-alpha.12",
     "node-fetch": "^2.6.7"
-    },
-    "devDependencies": {
-        "@types/node": "^20.17.10",
-        "@types/vscode": "^1.95.0",
-        "@types/mocha": "^10.0.9",
-        "@typescript-eslint/eslint-plugin": "^8.10.0",
-        "@typescript-eslint/parser": "^8.7.0",
-        "eslint": "^9.13.0",
-        "typescript": "^5.6.3",
-        "@vscode/test-cli": "^0.0.10",
-        "@vscode/test-electron": "^2.4.1"
-    }
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.10",
+    "@types/vscode": "^1.95.0",
+    "@types/mocha": "^10.0.9",
+    "@typescript-eslint/eslint-plugin": "^8.10.0",
+    "@typescript-eslint/parser": "^8.7.0",
+    "eslint": "^9.13.0",
+    "typescript": "^5.6.3",
+    "@vscode/test-cli": "^0.0.10",
+    "@vscode/test-electron": "^2.4.1"
+  }
 }
