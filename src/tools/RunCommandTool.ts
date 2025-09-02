@@ -1,12 +1,14 @@
 import * as vscode from 'vscode';
 import { preInvokeHint, postSuccessHint, postErrorHint } from './AgentToolHelpers';
 import { spawn } from 'child_process';
+import * as path from 'path';
 
 export interface IRunCommandParams {
+    // Full command string including flags (e.g. "npx @vscode/vsce package --some-flag")
     command: string;
-    args?: string[];
-    cwd?: string;
-    shell?: boolean | string;
+    // Optional working directory (relative to workspace root or absolute path)
+    path?: string;
+    // Optional timeout in milliseconds
     timeoutMs?: number;
 }
 
@@ -22,16 +24,28 @@ export class RunCommandTool implements vscode.LanguageModelTool<IRunCommandParam
             }
 
             const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-            const cwd = input.cwd
-                ? (workspaceFolder ? vscode.Uri.joinPath(workspaceFolder.uri, input.cwd).fsPath : input.cwd)
-                : (workspaceFolder ? workspaceFolder.uri.fsPath : process.cwd());
+            // Resolve working directory from `path` parameter (if provided) against workspace
+            let cwd: string;
+            if (input.path) {
+                const rawPath = String(input.path).trim();
+                const isWindowsDrive = /^[a-zA-Z]:\\/.test(rawPath) || /^[a-zA-Z]:\//.test(rawPath);
+                const isAbsolutePath = path.isAbsolute(rawPath) || isWindowsDrive;
+                if (isAbsolutePath) {
+                    cwd = path.normalize(rawPath);
+                } else if (workspaceFolder) {
+                    cwd = path.normalize(path.join(workspaceFolder.uri.fsPath, rawPath));
+                } else {
+                    cwd = path.resolve(rawPath);
+                }
+            } else {
+                cwd = workspaceFolder ? workspaceFolder.uri.fsPath : process.cwd();
+            }
 
-            // Build spawn options
-            const spawnOptions: any = { cwd };
-            if (typeof input.shell !== 'undefined') spawnOptions.shell = input.shell;
+            // Always run the provided `command` string through a shell so callers may include flags
+            const spawnOptions: any = { cwd, shell: true };
 
             return await new Promise<vscode.LanguageModelToolResult>((resolve) => {
-                const child = spawn(input.command, input.args || [], spawnOptions);
+                const child = spawn(input.command, spawnOptions as any);
                 let stdout = '';
                 let stderr = '';
                 let timedOut = false;
@@ -57,8 +71,6 @@ export class RunCommandTool implements vscode.LanguageModelTool<IRunCommandParam
                 child.on('close', (code, signal) => {
                     if (timeout) clearTimeout(timeout);
 
-                    // Provide a compact summary and full outputs as separate parts so the assistant
-                    // can reference the result safely.
                     const parts: vscode.LanguageModelTextPart[] = [];
                     parts.push(new vscode.LanguageModelTextPart(preInvokeHint('RunCommandTool', input.command)));
 
@@ -66,10 +78,8 @@ export class RunCommandTool implements vscode.LanguageModelTool<IRunCommandParam
                         parts.push(new vscode.LanguageModelTextPart(`Command timed out after ${input.timeoutMs}ms. Partial stdout/stderr included below.`));
                     }
 
-                    // Summary
                     parts.push(new vscode.LanguageModelTextPart(`Exit code: ${code ?? 'null'}${signal ? `, signal: ${signal}` : ''}`));
 
-                    // Truncate long outputs to avoid streaming huge blobs; include lengths
                     const maxPreview = 16 * 1024; // 16KB
                     const safeStdout = stdout.length > maxPreview ? stdout.slice(0, maxPreview) + '\n...[truncated]' : stdout;
                     const safeStderr = stderr.length > maxPreview ? stderr.slice(0, maxPreview) + '\n...[truncated]' : stderr;
@@ -98,15 +108,14 @@ export class RunCommandTool implements vscode.LanguageModelTool<IRunCommandParam
         _token: vscode.CancellationToken
     ) {
         const autoConfirm = vscode.workspace.getConfiguration('cogent').get('autoConfirmTools.runCommand', false);
-        const cmd = `${options.input.command} ${ (options.input.args || []).join(' ') }`;
-        const message = `Run command: ${cmd}`;
+        const message = `Run command: ${options.input.command}`;
         if (autoConfirm) return { invocationMessage: message };
 
         return {
             invocationMessage: message,
             confirmationMessages: {
                 title: 'Run Command',
-                message: new vscode.MarkdownString(`${message}?\n\nWorking directory: ${options.input.cwd ?? '(workspace root)'}`)
+                message: new vscode.MarkdownString(`${message}?\n\nWorking directory: ${options.input.path ?? '(workspace root)'}`)
             }
         };
     }

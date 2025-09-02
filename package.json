@@ -129,26 +129,17 @@
           "command"
         ],
         "displayName": "Run Command",
-        "modelDescription": "Execute a shell/OS command in the workspace. Supports command, args, cwd, shell, and timeoutMs.",
+        "modelDescription": "Execute a shell/OS command in the workspace. Accepts a single `command` string (include any flags in the string) and an optional `path` to set the working directory. Optionally specify `timeoutMs`.",
         "inputSchema": {
           "type": "object",
           "properties": {
             "command": {
               "type": "string",
-              "description": "Command to run"
+              "description": "Full command string to run (include flags in the string, e.g. \"npx @vscode/vsce package --no-dependencies\")"
             },
-            "args": {
-              "type": "array",
-              "items": { "type": "string" },
-              "description": "Argument list"
-            },
-            "cwd": {
+            "path": {
               "type": "string",
               "description": "Working directory (relative to workspace or absolute)"
-            },
-            "shell": {
-              "oneOf": [ { "type": "boolean" }, { "type": "string" } ],
-              "description": "Whether to run in a shell (true/false) or shell to use"
             },
             "timeoutMs": {
               "type": "number",
