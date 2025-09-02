@@ -21,16 +21,25 @@ export function isTsxToolUserMetadata(obj: unknown): obj is TsxToolUserMetadata 
         Array.isArray((obj as TsxToolUserMetadata).toolCallsMetadata.toolCallRounds);
 }
 
+// Helper to produce a friendly display name for the selected chat model
+function getModelDisplayName(model: vscode.LanguageModelChat | undefined): string {
+    if (!model) return 'unknown';
+    // Prefer any readable properties if present
+    // Some API versions expose `displayName` or `name`; fall back to vendor/family or id
+    const anyModel: any = model as any;
+    if (typeof anyModel.displayName === 'string' && anyModel.displayName.trim()) return anyModel.displayName;
+    if (typeof anyModel.name === 'string' && anyModel.name.trim()) return anyModel.name;
+    const vendor = anyModel.vendor ?? '';
+    const family = anyModel.family ?? '';
+    if (vendor || family) return `${vendor}${vendor && family ? '/' : ''}${family}`;
+    return anyModel.id ?? 'unknown';
+}
+
 export function registerToolUserChatParticipant(context: vscode.ExtensionContext) {
     // We'll create the chat participant below but declare it here so the handler
     // can update the participant's name at runtime based on the selected model.
     let toolUser: vscode.ChatParticipant | undefined;
 
-    function getModelDisplayName(model: vscode.LanguageModelChat | undefined): string {
-        if (!model) return 'unknown-model';
-        const anyM: any = model as any;
-        return (anyM.displayName || anyM.name || anyM.id || `${anyM.vendor ?? ''}/${anyM.family ?? ''}`).toString();
-    }
 
     const handler: vscode.ChatRequestHandler = async (request: vscode.ChatRequest, chatContext: vscode.ChatContext, stream: vscode.ChatResponseStream, token: vscode.CancellationToken) => {
         // Prefer a model the user has already selected on the chat/request/context if present.
@@ -64,31 +73,19 @@ export function registerToolUserChatParticipant(context: vscode.ExtensionContext
             return;
         }
 
-        const useFullWorkspace = vscode.workspace.getConfiguration('cogent').get('use_full_workspace', false);
-        // New config to control whether we should always prefer using tools
-        const alwaysUseTools = vscode.workspace.getConfiguration('cogent').get('alwaysUseTools', true);
-
-        // Base set: cogent_ tools (optionally excluding readFile when useFullWorkspace=false)
-        let tools = vscode.lm.tools.filter(tool =>
-            typeof tool.name === 'string' &&
-            tool.name.startsWith('cogent_') &&
-            (!useFullWorkspace || tool.name !== 'cogent_readFile')
-        );
-
-        // Ensure the getVscodeApi tool and any Copilot-provided tools are available by default.
-        // We prefer tools named 'cogent_getVscodeApi' and any tool whose name contains 'copilot' or 'getvscodeapi'.
-        const extraPreferred = vscode.lm.tools.filter(t => {
-            if (!t || typeof t.name !== 'string') return false;
-            const n = t.name.toLowerCase();
-            return n === 'cogent_getvscodeapi' || n.includes('copilot') || n.includes('getvscodeapi');
-        });
-
-        // Merge and dedupe by name
-        const byName = new Map<string, typeof extraPreferred[0]>();
-        for (const t of [...tools, ...extraPreferred]) {
-            if (typeof t.name === 'string' && !byName.has(t.name)) byName.set(t.name, t);
+        // Announce the model being used to the chat so the user sees it before the assistant PLAN
+        try {
+            const modelDisplay = getModelDisplayName(model);
+            stream.markdown(`model: ${modelDisplay}`);
+        } catch (e) {
+            // Fail silently; announcing the model is optional and should not block handling
+            /* noop */
         }
-        tools = Array.from(byName.values());
+
+      
+
+
+       
 
         const options: vscode.LanguageModelChatRequestOptions = {
             justification: 'To make a request to Cogent',
@@ -114,9 +111,9 @@ export function registerToolUserChatParticipant(context: vscode.ExtensionContext
             }
         });
 
-    const toolReferences = [...request.toolReferences];
-    const accumulatedToolResults: Record<string, vscode.LanguageModelToolResult> = {};
-    const toolCallRounds: ToolCallRound[] = [];
+        const toolReferences = [...request.toolReferences];
+        const accumulatedToolResults: Record<string, vscode.LanguageModelToolResult> = {};
+        const toolCallRounds: ToolCallRound[] = [];
 
         const runWithTools = async (): Promise<void> => {
             const requestedTool = toolReferences.shift();
@@ -124,22 +121,6 @@ export function registerToolUserChatParticipant(context: vscode.ExtensionContext
                 // A specific tool was requested by the chat request; require that single tool.
                 options.toolMode = vscode.LanguageModelChatToolMode.Required;
                 options.tools = vscode.lm.tools.filter(tool => tool.name === requestedTool.name);
-            } else if (alwaysUseTools) {
-                // If configured to always use tools, prefer to make a single preferred tool Required.
-                // Note: LanguageModelChatToolMode.Required is not supported with more than one tool,
-                // so only set Required when we have exactly one tool to require.
-                if (tools.length === 1) {
-                    options.toolMode = vscode.LanguageModelChatToolMode.Required;
-                    options.tools = [...tools];
-                } else {
-                    // Multiple tools present — do not set Required (unsupported). Provide the tools
-                    // but leave toolMode undefined so the model can choose to call them.
-                    options.toolMode = undefined;
-                    options.tools = [...tools];
-                }
-            } else {
-                options.toolMode = undefined;
-                options.tools = [...tools];
             }
 
             const response = await model.sendRequest(messages, options, token);
@@ -200,6 +181,6 @@ export function registerToolUserChatParticipant(context: vscode.ExtensionContext
     toolUser = vscode.chat.createChatParticipant('cogent.assistant', handler);
     toolUser.iconPath = vscode.Uri.joinPath(context.extensionUri, 'assets/cogent.jpeg');
 
-   
+
     context.subscriptions.push(toolUser);
 }
