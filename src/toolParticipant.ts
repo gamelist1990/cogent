@@ -153,6 +153,8 @@ export function registerToolUserChatParticipant(context: vscode.ExtensionContext
                 const builtInTools = vscode.lm.tools.filter(tool => !tool.name.startsWith('cogent_'));
                 const customTools = vscode.lm.tools.filter(tool => tool.name.startsWith('cogent_'));
                 options.tools = [...builtInTools, ...customTools]; // Built-in first
+                // When we supply many tools, Required mode is not supported — ensure Auto is set.
+                options.toolMode = vscode.LanguageModelChatToolMode.Auto;
             }
 
             const response = await model.sendRequest(messages, options, token);
