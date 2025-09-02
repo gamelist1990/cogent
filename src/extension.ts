@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { registerToolUserChatParticipant } from './toolParticipant';
-import { RemoveFileTool } from './tools';
+import { RemoveFileTool, RunCommandTool } from './tools';
 import { DiffView } from './components/DiffView';
 import { Logger } from './components/Logger';
 
@@ -15,6 +15,11 @@ export function activate(context: vscode.ExtensionContext) {
     // Create file tool for safe creation of new files via the language model.
     context.subscriptions.push(
         vscode.lm.registerTool('cogent_createFile', new (require('./tools').CreateFileTool)())
+    );
+
+    // Run command tool
+    context.subscriptions.push(
+        vscode.lm.registerTool('cogent_runCommand', new (require('./tools').RunCommandTool)())
     );
 
 
