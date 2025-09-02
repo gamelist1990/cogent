@@ -47,20 +47,68 @@ export function registerToolUserChatParticipant(context: vscode.ExtensionContext
         // likely locations using `any` and fall back to prompting the user as before.
         let model: vscode.LanguageModelChat | undefined;
 
-        const candidateFromRequest = (request as any)?.model || (request as any)?.selectedModel || (request as any)?.selectedChatModel;
-        const candidateFromContext = (chatContext as any)?.selectedModel || (chatContext as any)?.model;
+        // If the request already contains a typed model, prefer it immediately.
+        if ((request as any)?.model) {
+            model = (request as any).model as vscode.LanguageModelChat;
+        }
 
-        if (candidateFromRequest) {
-            model = candidateFromRequest as vscode.LanguageModelChat;
-        } else if (candidateFromContext) {
-            model = candidateFromContext as vscode.LanguageModelChat;
-        } else {
-            const MODEL_SELECTOR: vscode.LanguageModelChatSelector = { vendor: 'copilot', family: 'gpt-4.1' };
-            let models = await vscode.lm.selectChatModels(MODEL_SELECTOR);
-            model = models[0];
+        // Try a variety of locations and property names that can contain the user's selected model.
+        // Some API versions expose the full model object; others expose only an id / name string.
+        const reqAny = request as any;
+        const ctxAny = chatContext as any;
+
+        let candidateFromRequest = reqAny?.model || reqAny?.selectedModel || reqAny?.selectedChatModel || reqAny?.modelId || reqAny?.selectedModelId || reqAny?.chatModel || reqAny?.chatModelId;
+        let candidateFromContext = ctxAny?.selectedModel || ctxAny?.model || ctxAny?.selectedModelId || ctxAny?.modelId;
+
+        // If we have a string id (e.g. 'gpt5-mini'), try to resolve it to a LanguageModelChat from available chat models.
+        const resolveModel = async (cand: any): Promise<vscode.LanguageModelChat | undefined> => {
+            if (!cand) return undefined;
+            if (typeof cand === 'object') return cand as vscode.LanguageModelChat;
+            if (typeof cand === 'string') {
+                try {
+                    // prefer exact id matches among available chat models
+                    const all = await vscode.lm.selectChatModels({});
+                    const found = all.find(m => {
+                        const anyM: any = m as any;
+                        return anyM.id === cand || anyM.name === cand || anyM.displayName === cand;
+                    });
+                    if (found) return found;
+                } catch {
+                    // ignore resolution failure and fall through to selector fallback
+                }
+            }
+            return undefined;
+        };
+
+        model = await resolveModel(candidateFromRequest) ?? await resolveModel(candidateFromContext);
+
+        if (!model) {
+            // If no explicit model was found, fall back to preferred selectors but try to avoid hardcoding old family names.
+            // Try to pick a modern default (prefer copilot vendor and look for a high-capability model first).
+            let models: vscode.LanguageModelChat[] = [];
+            try {
+                models = await vscode.lm.selectChatModels({ vendor: 'copilot' });
+            } catch {
+                // ignore
+            }
+
+            // Prefer an explicitly high-capability family if present, otherwise pick the first returned model.
+            model = models.find(m => { const a: any = m as any; return a.family && /gpt-?5|gpt5|gpt-?4\.1|gpt4\.1|gpt-?4o|4o/i.test(`${a.family}`); }) ?? models[0];
+
+            // As a last resort, keep the older selector fallback that existed previously.
             if (!model) {
-                models = await vscode.lm.selectChatModels({ vendor: 'copilot', family: 'gpt-4o' });
-                model = models[0];
+                try {
+                    const MODEL_SELECTOR: vscode.LanguageModelChatSelector = { vendor: 'copilot', family: 'gpt-4.1' };
+                    models = await vscode.lm.selectChatModels(MODEL_SELECTOR);
+                    model = models[0];
+                } catch {
+                    try {
+                        models = await vscode.lm.selectChatModels({ vendor: 'copilot', family: 'gpt-4o' });
+                        model = models[0];
+                    } catch {
+                        // give up; model will remain undefined and be handled below
+                    }
+                }
             }
         }
 
