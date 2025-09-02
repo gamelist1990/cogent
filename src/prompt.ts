@@ -52,7 +52,7 @@ export function buildPrompt(opts: BuildPromptOptions): string {
 - 外部ファイルを自動で生成する場合は、\`cogent.allowExternalFileCreation\` 設定やユーザー許可を尊重すること。
 - 大きなリファクタや危険な変更（API 互換を壊す等）は人間レビューを必須とする。
 
-このファイルはエージェントの「行動原則」として更新可能です。更新履歴はコミットログで管理してください。`,
+このファイルはエージェントの「行動原則」です。`,
 		'',
 		'## ファイル編集についての必須方針',
 		'- 外部パッチ（生テキストの V4A/patched diff など）に頼らず、実行環境の組み込み API を使って編集すること。',
@@ -64,14 +64,20 @@ export function buildPrompt(opts: BuildPromptOptions): string {
 		'## ツール呼び出しの一般ルール',
 		'- ツールは定義どおりの引数で呼び、実行前に前提条件を検証すること。',
 		'- ツールの生 JSON をそのままユーザーに吐き出さない。結果は要約して伝える。',
+		'- コード生成時は必ずツール（cogent_createFile, cogent_removeFile 等）を使ってエディタに適応する。生コードをチャットに直接出力しない。',
+		'- ファイル編集が必要な場合は、まず該当ファイルを読み取り、変更箇所を特定してからツールで適用する。',
+		'- ツール呼び出しの結果はログに記録し、エラーが発生したら修正を繰り返す。',
 		'',
 		'## 差分適用と大きなファイルの取り扱い',
 		'- ファイル行数が 200 を超える場合は全文読み取りを避け、検索で候補領域を絞り局所領域（デフォルト上下20行）だけを扱う。',
 		'- 差分はできるだけ小さく、SEARCH コンテキストを入れて適用位置が一意になるようにする。',
 		'',
 		'## 提供されるツール（要点）',
-		"- `cogent_removeFile`: { path: string, recursive?: boolean } — workspace.fs.delete を利用します。",
-		"- `cogent_createFile`: { path: string, content?: string, overwrite?: boolean } — workspace.fs.writeFile を利用します。",
+		"- Copilot の組み込みツールをメインに使用する：`run_in_terminal`, `read_file`, `replace_string_in_file`, `insert_edit_into_file`, `grep_search`, `semantic_search`, `list_dir`, `get_errors` など。",
+		"- カスタムツール：`cogent_removeFile`: { path: string, recursive?: boolean } — workspace.fs.delete を利用します。",
+		"- カスタムツール：`cogent_createFile`: { path: string, content?: string, overwrite?: boolean } — workspace.fs.writeFile を利用します。",
+		"- 組み込みツールが利用可能な場合は優先的に使用し、必要に応じてカスタムツールを補完する。",
+		"- ツール呼び出し時は、Copilot の API (`vscode.lm.tools`) を活用して組み込みツールを扱えるようにする。",
 	].join('\n');
 
 	return [guidance, envInfo, workspaceFilesSection, extraInstructions, requestPrompt ? `## ユーザー送信プロンプト\n${requestPrompt}` : '']

@@ -113,12 +113,40 @@ export function registerToolUserChatParticipant(context: vscode.ExtensionContext
         const accumulatedToolResults: Record<string, vscode.LanguageModelToolResult> = {};
         const toolCallRounds: ToolCallRound[] = [];
 
+        // --- Sanitization helpers to guarantee no raw code/JSON leaks to chat UI ---
+        const codeSuppressionState = { suppressedOnce: false };
+        const looksLikeCodeOrJson = (text: string): boolean => {
+            if (!text) return false;
+            if (text.includes('```')) return true; // fenced block
+            // Heuristics: common TS/JS keywords or JSON file operation patterns
+            const codeRegex = /(\bimport\b|\bexport\b|\bclass\b|\binterface\b|\bfunction\b|=>|const\s+\w+\s*=|"path"\s*:|"files"\s*:|"content"\s*:\s*"|<\/?[A-Za-z][A-Za-z0-9]*>)/;
+            // Long braces with many colons (likely JSON or object literal)
+            const manyColons = (text.match(/:/g) || []).length >= 3 && /[\{\[]/.test(text);
+            return codeRegex.test(text) || manyColons;
+        };
+        const sanitizeForStreaming = (original: string): string => {
+            if (!looksLikeCodeOrJson(original)) {
+                return original;
+            }
+            if (!codeSuppressionState.suppressedOnce) {
+                codeSuppressionState.suppressedOnce = true;
+                return '⚠️ 生成されたコード/JSONはポリシーにより非表示化されました。ファイル操作は対応ツール (cogent_createFile / cogent_removeFile 等) を用いて適用します。';
+            }
+            // Subsequent chunks of the same hidden block are silently discarded
+            return '';
+        };
+
         const runWithTools = async (): Promise<void> => {
             const requestedTool = toolReferences.shift();
             if (requestedTool) {
                 // A specific tool was requested by the chat request; require that single tool.
                 options.toolMode = vscode.LanguageModelChatToolMode.Required;
                 options.tools = vscode.lm.tools.filter(tool => tool.name === requestedTool.name);
+            } else {
+                // Prefer built-in Copilot tools over custom tools
+                const builtInTools = vscode.lm.tools.filter(tool => !tool.name.startsWith('cogent_'));
+                const customTools = vscode.lm.tools.filter(tool => tool.name.startsWith('cogent_'));
+                options.tools = [...builtInTools, ...customTools]; // Built-in first
             }
 
             const response = await model.sendRequest(messages, options, token);
@@ -127,8 +155,11 @@ export function registerToolUserChatParticipant(context: vscode.ExtensionContext
 
             for await (const part of response.stream) {
                 if (part instanceof vscode.LanguageModelTextPart) {
-                    stream.markdown(part.value);
-                    responseStr += part.value;
+                    const safe = sanitizeForStreaming(part.value);
+                    if (safe) {
+                        stream.markdown(safe);
+                        responseStr += safe;
+                    }
                 } else if (part instanceof vscode.LanguageModelToolCallPart) {
                     toolCalls.push(part);
                 }
