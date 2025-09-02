@@ -121,6 +121,42 @@
             "path"
           ]
         }
+      },
+      {
+        "name": "cogent_runCommand",
+        "tags": [
+          "system",
+          "command"
+        ],
+        "displayName": "Run Command",
+        "modelDescription": "Execute a shell/OS command in the workspace. Supports command, args, cwd, shell, and timeoutMs.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string",
+              "description": "Command to run"
+            },
+            "args": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Argument list"
+            },
+            "cwd": {
+              "type": "string",
+              "description": "Working directory (relative to workspace or absolute)"
+            },
+            "shell": {
+              "oneOf": [ { "type": "boolean" }, { "type": "string" } ],
+              "description": "Whether to run in a shell (true/false) or shell to use"
+            },
+            "timeoutMs": {
+              "type": "number",
+              "description": "Timeout in milliseconds"
+            }
+          },
+          "required": ["command"]
+        }
       }
     ]
   },
