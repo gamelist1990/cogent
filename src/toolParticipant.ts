@@ -11,9 +11,6 @@ export interface ToolCallsMetadata {
     toolCallResults: Record<string, vscode.LanguageModelToolResult>;
 }
 
-interface ReadFileToolInput {
-    paths: string[];
-}
 
 export function isTsxToolUserMetadata(obj: unknown): obj is TsxToolUserMetadata {
     return !!obj &&
@@ -129,7 +126,7 @@ export function registerToolUserChatParticipant(context: vscode.ExtensionContext
             }
             if (!codeSuppressionState.suppressedOnce) {
                 codeSuppressionState.suppressedOnce = true;
-                return '⚠️ 生成されたコード/JSONはポリシーにより非表示化されました。ファイル操作は対応ツール (cogent_createFile / cogent_removeFile 等) を用いて適用します。';
+                return '⚠️ 生成されたコード/JSONはポリシーにより非表示化されました。';
             }
             // Subsequent chunks of the same hidden block are silently discarded
             return '';
