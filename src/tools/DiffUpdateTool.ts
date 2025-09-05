@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import * as fsp from 'fs/promises';
+import normalizeToWorkspaceFile from '../components/path';
 import { preInvokeHint, postSuccessHint, postErrorHint } from './AgentToolHelpers';
 
 interface IDiffUpdateParams {
@@ -27,52 +27,18 @@ export class DiffUpdateTool implements vscode.LanguageModelTool<IDiffUpdateParam
                 throw new Error('Path is required (provide a path relative to the workspace root)');
             }
 
-            // パスの正規化
-            let normalizedRawPath = rawPath;
-            if (normalizedRawPath.startsWith('/') && !/^[a-zA-Z]:[\\/]/.test(normalizedRawPath)) {
-                normalizedRawPath = normalizedRawPath.replace(/^\/+/, '');
+            // Normalize path via central utility
+            const norm = normalizeToWorkspaceFile(rawPath, workspaceFolder);
+            if (!norm.insideWorkspace) {
+                throw new Error('Path is outside of the workspace root');
             }
+            const targetFsPath = norm.fsPath;
+            const targetUri = norm.uri;
 
-            const isWindowsDrive = /^[a-zA-Z]:[\\/]/.test(normalizedRawPath);
-            const isAbsolutePath = path.isAbsolute(normalizedRawPath) || isWindowsDrive;
-
-            let targetFsPath: string;
-            if (isAbsolutePath) {
-                targetFsPath = path.normalize(normalizedRawPath);
-            } else {
-                targetFsPath = path.normalize(path.resolve(workspaceFolder.uri.fsPath, normalizedRawPath));
-            }
-
-            // Determine whether the target is inside the workspace
-            const relative = path.relative(workspaceFolder.uri.fsPath, targetFsPath);
-            const outsideWorkspace = relative.startsWith('..') || path.isAbsolute(targetFsPath) && !relative && path.normalize(targetFsPath) !== path.normalize(path.resolve(workspaceFolder.uri.fsPath));
-
-            const allowExternal = vscode.workspace.getConfiguration('cogent').get('allowExternalFileEdit', false);
-
-            // If outside workspace and not allowed, refuse
-            if (outsideWorkspace && !allowExternal) {
-                return new vscode.LanguageModelToolResult([
-                    new vscode.LanguageModelTextPart(preInvokeHint('DiffUpdateTool', options.input.path)),
-                    new vscode.LanguageModelTextPart(postErrorHint('DiffUpdateTool', `Refusing to read/update files outside the workspace root. To allow this, enable 'cogent.allowExternalFileEdit' in settings.`))
-                ]);
-            }
-
-            const targetUri = vscode.Uri.file(targetFsPath);
-
-            // ファイルの存在確認 / 読み取り
+            // ファイルの存在確認
             let fileExists = true;
-            let currentContent = '';
             try {
-                if (outsideWorkspace) {
-                    // Use node fs for external files
-                    await fsp.stat(targetFsPath);
-                    const buf = await fsp.readFile(targetFsPath);
-                    currentContent = buf.toString('utf8');
-                } else {
-                    await vscode.workspace.fs.stat(targetUri);
-                    const fileContent = await vscode.workspace.fs.readFile(targetUri);
-                    currentContent = Buffer.from(fileContent).toString('utf8');
-                }
+                await vscode.workspace.fs.stat(targetUri);
             } catch (err) {
                 fileExists = false;
             }
@@ -80,6 +46,10 @@ export class DiffUpdateTool implements vscode.LanguageModelTool<IDiffUpdateParam
             if (!fileExists) {
                 throw new Error(`File ${options.input.path} does not exist`);
             }
+
+            // ファイル内容を読み取り
+            const fileContent = await vscode.workspace.fs.readFile(targetUri);
+            const currentContent = Buffer.from(fileContent).toString('utf8');
 
             // 検索文字列のバリデーション
             const searchText = options.input.search;
@@ -129,12 +99,7 @@ export class DiffUpdateTool implements vscode.LanguageModelTool<IDiffUpdateParam
 
             // ファイルを更新
             const updatedBuffer = Buffer.from(updatedContent, 'utf8');
-            if (outsideWorkspace) {
-                // Write using node fs for external files
-                await fsp.writeFile(targetFsPath, updatedBuffer);
-            } else {
-                await vscode.workspace.fs.writeFile(targetUri, updatedBuffer);
-            }
+            await vscode.workspace.fs.writeFile(targetUri, updatedBuffer);
 
             // コンテキスト情報を取得
             const contextLines = options.input.context ?? 3;

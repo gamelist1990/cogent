@@ -62,14 +62,7 @@
           "default": true,
           "description": "Allow CreateFileTool to create files outside the workspace root when enabled (use with caution).",
           "order": 4.5
-        }
-        ,
-        "cogent.allowExternalFileEdit": {
-          "type": "boolean",
-          "default": false,
-          "description": "Allow DiffUpdateTool to read and update files outside the workspace root when enabled (use with caution).",
-          "order": 4.6
-        }
+  }
       }
     },
     "chatParticipants": [

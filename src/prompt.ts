@@ -7,14 +7,15 @@ export interface BuildPromptOptions {
 	osLevel: string;
 	shellType: string;
 	useFullWorkspace: boolean;
+	workspacePath?: string;
 	requestPrompt?: string | undefined;
 }
 
 export function buildPrompt(opts: BuildPromptOptions): string {
-	const { structure, fileContentsSection, customInstructions, osLevel, shellType, useFullWorkspace, requestPrompt } = opts;
+	const { structure, fileContentsSection, customInstructions, osLevel, shellType, useFullWorkspace, requestPrompt, workspacePath } = opts;
 
 	const extraInstructions = customInstructions ? `\n## ユーザー指定の追加指示\n${customInstructions}` : '';
-	const envInfo = `## 実行環境\n- OS: ${osLevel}\n`;
+	const envInfo = `## 実行環境\n- OS: ${osLevel}\n- ワークスペース: ${workspacePath || 'N/A'}\n`;
 	const workspaceFilesSection = useFullWorkspace ? `\n---- ワークスペースのファイル抜粋 ----\n${fileContentsSection}` : '';
 
 	const sections = {
