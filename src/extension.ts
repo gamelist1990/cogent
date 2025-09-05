@@ -22,6 +22,11 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.lm.registerTool('cogent_runCommand', new (require('./tools').RunCommandTool)())
     );
 
+    // Diff update tool for precise file modifications
+    context.subscriptions.push(
+        vscode.lm.registerTool('cogent_diffUpdate', new (require('./tools').DiffUpdateTool)())
+    );
+
 
 
     // Register the tool participant

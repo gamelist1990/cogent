@@ -109,29 +109,6 @@ export function registerToolUserChatParticipant(context: vscode.ExtensionContext
         const accumulatedToolResults: Record<string, vscode.LanguageModelToolResult> = {};
         const toolCallRounds: ToolCallRound[] = [];
 
-        // --- Sanitization helpers to guarantee no raw code/JSON leaks to chat UI ---
-        const codeSuppressionState = { suppressedOnce: false };
-        const looksLikeCodeOrJson = (text: string): boolean => {
-            if (!text) return false;
-            if (text.includes('```')) return true; // fenced block
-            // Heuristics: common TS/JS keywords or JSON file operation patterns
-            const codeRegex = /(\bimport\b|\bexport\b|\bclass\b|\binterface\b|\bfunction\b|=>|const\s+\w+\s*=|"path"\s*:|"files"\s*:|"content"\s*:\s*"|<\/?[A-Za-z][A-Za-z0-9]*>)/;
-            // Long braces with many colons (likely JSON or object literal)
-            const manyColons = (text.match(/:/g) || []).length >= 3 && /[\{\[]/.test(text);
-            return codeRegex.test(text) || manyColons;
-        };
-        const sanitizeForStreaming = (original: string): string => {
-            if (!looksLikeCodeOrJson(original)) {
-                return original;
-            }
-            if (!codeSuppressionState.suppressedOnce) {
-                codeSuppressionState.suppressedOnce = true;
-                return '⚠️ 生成されたコード/JSONはポリシーにより非表示化されました。';
-            }
-            // Subsequent chunks of the same hidden block are silently discarded
-            return '';
-        };
-
         const runWithTools = async (): Promise<void> => {
             const requestedTool = toolReferences.shift();
             if (requestedTool) {
@@ -160,11 +137,8 @@ export function registerToolUserChatParticipant(context: vscode.ExtensionContext
 
             for await (const part of response.stream) {
                 if (part instanceof vscode.LanguageModelTextPart) {
-                    const safe = sanitizeForStreaming(part.value);
-                    if (safe) {
-                        stream.markdown(safe);
-                        responseStr += safe;
-                    }
+                    stream.markdown(part.value);
+                    responseStr += part.value;
                 } else if (part instanceof vscode.LanguageModelToolCallPart) {
                     toolCalls.push(part);
                 }

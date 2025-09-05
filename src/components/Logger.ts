@@ -32,9 +32,12 @@ export class Logger {
     }
 
     debug(message: string): void {
-        if (vscode.workspace.getConfiguration('cogent').get('debug', false)) {
-            this.channel.appendLine(`DEBUG: ${message}`);
-        }
+        this.channel.appendLine(`DEBUG: ${message}`);
+    }
+
+    // Path debugging helper
+    debugPath(operation: string, originalPath: string, processedPath: string, workspacePath?: string): void {
+        this.debug(`${operation}: original="${originalPath}" processed="${processedPath}" workspace="${workspacePath || 'N/A'}"`);
     }
 
     show(): void {

@@ -398,6 +398,54 @@ class ToolResultElement extends PromptElement<ToolResultElementProps, void> {
               );
             }
 
+            // Normalize common path fields so invoked tools receive absolute paths.
+            // This prevents errors like: "Invalid input path: app.js. Be sure to use an absolute path.".
+            try {
+              const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+
+              const normalizePathValue = (p: string) => {
+                if (!p || typeof p !== 'string') return p;
+                // Already absolute (Windows drive or POSIX absolute)
+                const isWindowsDrive = /^[a-zA-Z]:[\\\/]/.test(p);
+                if (path.isAbsolute(p) || isWindowsDrive || p.startsWith('/') || p.startsWith('\\')) {
+                  return path.normalize(p);
+                }
+                // Make workspace-relative absolute
+                if (workspaceFolder) {
+                  return path.normalize(path.resolve(workspaceFolder.uri.fsPath, p));
+                }
+                return p;
+              };
+
+              const normalizeObjectPaths = (obj: any): any => {
+                if (!obj || typeof obj !== 'object') return obj;
+                if (Array.isArray(obj)) return obj.map((v) => normalizeObjectPaths(v));
+                const out: any = {};
+                for (const k of Object.keys(obj)) {
+                  const v = obj[k];
+                  if (typeof v === 'string' && (k === 'path' || k === 'filePath' || k === 'file' || k === 'filename')) {
+                    out[k] = normalizePathValue(v);
+                  } else if (Array.isArray(v) && (k === 'files' || k === 'paths')) {
+                    out[k] = v.map((e: any) => (typeof e === 'string' ? normalizePathValue(e) : normalizeObjectPaths(e)));
+                  } else if (typeof v === 'object') {
+                    out[k] = normalizeObjectPaths(v);
+                  } else {
+                    out[k] = v;
+                  }
+                }
+                return out;
+              };
+
+              try {
+                invocationInput = normalizeObjectPaths(invocationInput);
+                Logger.getInstance().debug(`Normalized invocation input keys=${Object.keys(invocationInput || {}).slice(0,10).join(',')}`);
+              } catch (normErr) {
+                Logger.getInstance().debug(`Failed to normalize invocation input: ${normErr instanceof Error ? normErr.message : String(normErr)}`);
+              }
+            } catch (normOuterErr) {
+              Logger.getInstance().debug(`Error in path normalization: ${normOuterErr instanceof Error ? normOuterErr.message : String(normOuterErr)}`);
+            }
+
             toolResult = await vscode.lm.invokeTool(
               this.props.toolCall.name,
               {
@@ -642,16 +690,23 @@ class PromptReferenceElement extends PromptElement<PromptReferenceProps> {
       // don't join it to the workspace folder. Only treat it as workspace-relative when it's a relative path.
       if (!uri.scheme && this.props.workspaceFolder) {
         const raw = uri.fsPath || "";
+        const logger = Logger.getInstance();
         const isWindowsDrive =
-          /^[a-zA-Z]:\\/.test(raw) || /^[a-zA-Z]:\//.test(raw);
+          /^[a-zA-Z]:[\\\/]/.test(raw);
         const isAbsolutePath = path.isAbsolute(raw) || isWindowsDrive;
-        if (!isAbsolutePath) {
-          uri = vscode.Uri.file(
-            path.join(this.props.workspaceFolder.uri.fsPath, uri.fsPath)
-          );
-        } else {
+        
+        logger.debugPath("PromptReference-Uri", raw, uri.fsPath, this.props.workspaceFolder.uri.fsPath);
+        
+        if (!isAbsolutePath && raw && !raw.startsWith("\\") && !raw.startsWith("/")) {
+          // Only join relative paths that don't start with separators
+          const joinedPath = path.join(this.props.workspaceFolder.uri.fsPath, raw);
+          uri = vscode.Uri.file(path.normalize(joinedPath));
+          logger.debugPath("PromptReference-Joined", raw, uri.fsPath, this.props.workspaceFolder.uri.fsPath);
+        } else if (isAbsolutePath) {
           uri = vscode.Uri.file(path.normalize(raw));
+          logger.debugPath("PromptReference-Absolute", raw, uri.fsPath);
         }
+        // For paths starting with \ or / but not absolute, keep original uri
       }
       try {
         const stat = await vscode.workspace.fs.stat(uri);
@@ -698,6 +753,7 @@ class PromptReferenceElement extends PromptElement<PromptReferenceProps> {
       } catch (err) {
         // If anything goes wrong (permissions, EISDIR, etc.), show a safe message.
         const msg = err instanceof Error ? err.message : String(err);
+        Logger.getInstance().error(`Failed to read file ${uri.fsPath}: ${msg}`);
         return (
           <Tag name="context">
             {!this.props.excludeReferences && (
@@ -716,16 +772,23 @@ class PromptReferenceElement extends PromptElement<PromptReferenceProps> {
       let uri = value.uri;
       if (!uri.scheme && this.props.workspaceFolder) {
         const raw = uri.fsPath || "";
+        const logger = Logger.getInstance();
         const isWindowsDrive =
-          /^[a-zA-Z]:\\/.test(raw) || /^[a-zA-Z]:\//.test(raw);
+          /^[a-zA-Z]:[\\\/]/.test(raw);
         const isAbsolutePath = path.isAbsolute(raw) || isWindowsDrive;
-        if (!isAbsolutePath) {
-          uri = vscode.Uri.file(
-            path.join(this.props.workspaceFolder.uri.fsPath, uri.fsPath)
-          );
-        } else {
+        
+        logger.debugPath("PromptReference-Location", raw, uri.fsPath, this.props.workspaceFolder.uri.fsPath);
+        
+        if (!isAbsolutePath && raw && !raw.startsWith("\\") && !raw.startsWith("/")) {
+          // Only join relative paths that don't start with separators
+          const joinedPath = path.join(this.props.workspaceFolder.uri.fsPath, raw);
+          uri = vscode.Uri.file(path.normalize(joinedPath));
+          logger.debugPath("PromptReference-Location-Joined", raw, uri.fsPath, this.props.workspaceFolder.uri.fsPath);
+        } else if (isAbsolutePath) {
           uri = vscode.Uri.file(path.normalize(raw));
+          logger.debugPath("PromptReference-Location-Absolute", raw, uri.fsPath);
         }
+        // For paths starting with \ or / but not absolute, keep original uri
       }
       const rangeText = (await vscode.workspace.openTextDocument(uri)).getText(
         value.range

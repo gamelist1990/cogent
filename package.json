@@ -35,12 +35,18 @@
               "type": "boolean",
               "default": false,
               "description": "Auto confirm file/directory delete operations"
+            },
+            "diffUpdate": {
+              "type": "boolean",
+              "default": false,
+              "description": "Auto confirm diff-based file update operations (cogent_diffUpdate)"
             }
           },
           "additionalProperties": false,
           "default": {
             "createFile": false,
-            "removeFile": false
+            "removeFile": false,
+            "diffUpdate": false
           },
           "description": "Configure which tools should auto-confirm their operations without showing confirmation dialog",
           "order": 2
@@ -56,6 +62,13 @@
           "default": true,
           "description": "Allow CreateFileTool to create files outside the workspace root when enabled (use with caution).",
           "order": 4.5
+        }
+        ,
+        "cogent.allowExternalFileEdit": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow DiffUpdateTool to read and update files outside the workspace root when enabled (use with caution).",
+          "order": 4.6
         }
       }
     },
@@ -147,6 +160,42 @@
             }
           },
           "required": ["command"]
+        }
+      },
+      {
+        "name": "cogent_diffUpdate",
+        "tags": [
+          "files",
+          "edit",
+          "diff"
+        ],
+        "displayName": "Diff Update File",
+        "modelDescription": "Apply precise diff-based updates to existing files. Searches for exact text and replaces it with new content. Provides context validation and multiple match detection.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Relative path to the file to update"
+            },
+            "search": {
+              "type": "string",
+              "description": "Exact text to search for and replace"
+            },
+            "replace": {
+              "type": "string",
+              "description": "Text to replace the search text with (use empty string for deletion)"
+            },
+            "context": {
+              "type": "number",
+              "description": "Number of context lines to show around the match (default: 3)"
+            },
+            "validateOnly": {
+              "type": "boolean",
+              "description": "Only validate the search without applying changes"
+            }
+          },
+          "required": ["path", "search", "replace"]
         }
       }
     ]
