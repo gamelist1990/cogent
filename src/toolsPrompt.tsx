@@ -40,6 +40,7 @@ function checkForExternalPaths(input: any, workspaceFolder?: vscode.WorkspaceFol
       
       if (typeof value === 'string' && pathKeys.has(key)) {
         const norm = tryNormalizeIfInside(value, workspaceFolder);
+        Logger.getInstance().debug(`External path check: ${key}=${value} -> norm=${norm ? 'inside' : 'outside'}`);
         if (!norm) {
           externalPaths.push(`${currentPath}=${value}`);
         }
@@ -448,14 +449,16 @@ class ToolResultElement extends PromptElement<ToolResultElementProps, void> {
               Logger.getInstance().debug(`Deep-normalized invocation input keys=${Object.keys(invocationInput || {}).slice(0,10).join(',')}`);
               
               // Check for workspace-external paths and block tool invocation if found
-              const hasExternalPaths = checkForExternalPaths(invocationInput, workspaceFolder);
-              if (hasExternalPaths.length > 0) {
-                Logger.getInstance().warn(`Blocking tool ${this.props.toolCall.name} due to external paths: ${hasExternalPaths.join(', ')}`);
+              const externalPaths = checkForExternalPaths(invocationInput, workspaceFolder);
+              Logger.getInstance().debug(`External paths check result: ${externalPaths.length} paths found: ${externalPaths.join(', ')}`);
+              
+              if (externalPaths.length > 0) {
+                Logger.getInstance().warn(`Blocking tool ${this.props.toolCall.name} due to external paths: ${externalPaths.join(', ')}`);
                 return (
                   <ToolMessage toolCallId={this.props.toolCall.callId}>
                     Tool invocation blocked: Cannot operate on files outside the current workspace. 
-                    External paths detected: {hasExternalPaths.slice(0, 3).join(', ')}
-                    {hasExternalPaths.length > 3 ? ` (and ${hasExternalPaths.length - 3} more)` : ''}
+                    External paths detected: {externalPaths.slice(0, 3).join(', ')}
+                    {externalPaths.length > 3 ? ` (and ${externalPaths.length - 3} more)` : ''}
                   </ToolMessage>
                 );
               }
